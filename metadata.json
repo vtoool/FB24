@@ -1,0 +1,5 @@
+{
+  "name": "Messenger CRM AI",
+  "description": "Next.js 14 compatible Messenger CRM with AI automation using Gemini, Supabase, and Tailwind CSS.",
+  "requestFramePermissions": []
+}
