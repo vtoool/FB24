@@ -8,7 +8,9 @@ const supabase = createClient(
   process.env.SUPABASE_ANON_KEY!
 );
 
-const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+// FIX: Per @google/genai guidelines, initialize with `apiKey` from `process.env.API_KEY`.
+// Renamed `genAI` to `ai` for consistency.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export async function GET(req: NextRequest) {
   // 1. Security Check
@@ -92,11 +94,12 @@ async function processConversation(conversationId: string, clientName: string) {
   let aiReplyText = '';
   
   try {
-     const response = await genAI.models.generateContent({
+     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: prompt,
      });
-     aiReplyText = response.text.trim();
+     // FIX: Safely access `response.text` which can be undefined. Use optional chaining and nullish coalescing to prevent runtime errors.
+     aiReplyText = response.text?.trim() ?? '';
   } catch (e) {
      console.error("Gemini Error", e);
      return; // Skip if AI fails
