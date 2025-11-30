@@ -1,11 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-// Setup Supabase (Server-side)
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_ANON_KEY!
-);
+// --- BULLETPROOF INITIALIZATION ---
+// This checks every possible variable name so the build won't fail
+const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  console.error("Build failed: Missing Supabase Keys.");
+  // We throw an error here to stop the build and force you to fix Env Vars
+  throw new Error("Supabase URL or Key is missing from Environment Variables!");
+}
+
+// We use (!) because we explicitly checked for existence above, satisfying TS
+const supabase = createClient(supabaseUrl!, supabaseKey!);
+// ----------------------------------
 
 // Verify Token for Facebook
 const VERIFY_TOKEN = process.env.FB_VERIFY_TOKEN;
@@ -19,7 +28,7 @@ export async function GET(req: NextRequest) {
   if (mode && token) {
     if (mode === 'subscribe' && token === VERIFY_TOKEN) {
       console.log('WEBHOOK_VERIFIED');
-      return new NextResponse(challenge, { status: 200 });
+      return new NextResponse(challenge || '', { status: 200 });
     } else {
       return new NextResponse('Forbidden', { status: 403 });
     }
@@ -35,11 +44,15 @@ export async function POST(req: NextRequest) {
       // Iterate over each entry - there may be multiple if batched
       for (const entry of body.entry) {
         // Iterate over each messaging event
-        const webhook_event = entry.messaging[0];
-        const sender_psid = webhook_event.sender.id;
+        // Safety check: sometimes entry.messaging is undefined if it's a different event type
+        const webhook_event = entry.messaging?.[0];
         
-        if (webhook_event.message) {
-          await handleMessage(sender_psid, webhook_event.message);
+        if (webhook_event) {
+            const sender_psid = webhook_event.sender.id;
+            
+            if (webhook_event.message) {
+              await handleMessage(sender_psid, webhook_event.message);
+            }
         }
       }
       return new NextResponse('EVENT_RECEIVED', { status: 200 });
@@ -58,15 +71,9 @@ async function handleMessage(senderPsid: string, receivedMessage: any) {
 
   // 1. Upsert Conversation
   // We assume 'senderPsid' maps to a conversation ID or we store PSID in the conversation table.
-  // For this simplified schema, let's assume senderPsid is mapped or we create a new conversation.
-  
-  // NOTE: Ideally, the conversations table should have a 'facebook_psid' column. 
-  // We'll use the PSID as ID for simplicity or look it up.
-  
   const now = new Date().toISOString();
 
-  // Try to find existing conversation by PSID (assuming id is PSID for this demo, or we need a lookup)
-  // In a real app: SELECT id FROM conversations WHERE facebook_psid = senderPsid
+  // Try to find existing conversation by PSID (assuming id is PSID for this demo)
   const conversationId = senderPsid; 
 
   const { error: upsertError } = await supabase
@@ -87,8 +94,6 @@ async function handleMessage(senderPsid: string, receivedMessage: any) {
   }
 
   // 2. Insert Message
-  // Check for duplicate? FB has 'mid' (message id). Ideally store 'mid' in messages table to dedupe.
-  // We will trust the insert for now.
   await supabase.from('messages').insert({
     conversation_id: conversationId,
     text: text,
