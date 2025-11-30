@@ -1,0 +1,17 @@
+name: Hourly CRM Check
+
+on:
+  schedule:
+    # Runs at minute 0 of every hour
+    - cron: '0 * * * *'
+  # Allows manual trigger from GitHub UI for testing
+  workflow_dispatch:
+
+jobs:
+  ping_vercel:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call CRM Automation Endpoint
+        run: |
+          curl -X GET ${{ secrets.VERCEL_APP_URL }}/api/cron/check \
+          -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
