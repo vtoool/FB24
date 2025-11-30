@@ -7,6 +7,13 @@ import { Sidebar } from '../components/Sidebar';
 import { ChatWindow } from '../components/ChatWindow';
 
 export default function Home() {
+  // --- FIX START: Prevent Hydration Errors ---
+  const [isMounted, setIsMounted] = useState(false);
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+  // -------------------------------------------
+
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -14,12 +21,16 @@ export default function Home() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [isRealtime, setIsRealtime] = useState(false);
 
-  // 1. Fetch Conversations (Simulating Server Component fetch or initial Client fetch)
+  // 1. Fetch Conversations
   useEffect(() => {
     const fetchConversations = async () => {
-      // Using Mock for Preview:
+      // Using Mock for Preview if env var is missing
       if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
         setConversations(mockConversations);
+      } else {
+        // Ideally fetch real data here if Supabase is connected
+        // const { data } = await supabase.from('conversations').select('*');
+        // if (data) setConversations(data);
       }
     };
 
@@ -61,7 +72,7 @@ export default function Home() {
        setTimeout(() => {
          setMessages(mockMessages[selectedId] || []);
          setLoadingMessages(false);
-       }, 300); // Simulate network latency
+       }, 300); 
     };
     
     loadMessages();
@@ -74,6 +85,7 @@ export default function Home() {
       if (filter === 'Unsold') return c.status === 'unsold';
       if (filter === 'Follow-up Needed') {
         if (c.status !== 'unsold' || c.last_message_by === 'me') return false;
+        // This Date calculation is what causes the error!
         const diffHours = (new Date().getTime() - new Date(c.last_message_at).getTime()) / (1000 * 60 * 60);
         return diffHours >= 18 && diffHours <= 23;
       }
@@ -100,9 +112,6 @@ export default function Home() {
 
     setConversations(prev => prev.map(c => {
       if (c.id === selectedId) {
-        // FIX: Explicitly type the updated conversation to match the Conversation interface.
-        // This resolves the TypeScript error where `last_message_by: 'me'` was being
-        // inferred as `string` instead of the literal type `'client' | 'me'`.
         const updatedConversation: Conversation = { 
           ...c, 
           last_message_by: 'me', 
@@ -114,6 +123,9 @@ export default function Home() {
       return c;
     }).sort((a,b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime()));
   };
+
+  // --- FIX END: If not mounted, render nothing to avoid mismatch ---
+  if (!isMounted) return null;
 
   return (
     <main className="flex h-screen w-screen bg-gray-50 overflow-hidden">
