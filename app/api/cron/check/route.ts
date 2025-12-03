@@ -1,8 +1,10 @@
-
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { GoogleGenAI } from '@google/genai';
 import { Database } from '@/types/supabase';
+
+// Define the exact Row type to prevent 'never' inference errors
+type ConversationRow = Database['public']['Tables']['conversations']['Row'];
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -17,14 +19,19 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Fetch leads that need follow up
-    const { data: leads, error } = await supabase
+    // 1. Fetch leads explicitly typed as ConversationRow[]
+    const { data, error } = await supabase
       .from('conversations')
       .select('*')
-      .eq('status', 'needs_follow_up');
+      .eq('status', 'needs_follow_up')
+      .returns<ConversationRow[]>(); // Fixes 'never' type error
 
     if (error) throw error;
-    if (!leads || leads.length === 0) {
+    
+    // Handle null data safely
+    const leads = data || [];
+
+    if (leads.length === 0) {
       return NextResponse.json({ processed: 0 });
     }
 
@@ -50,17 +57,23 @@ export async function GET(request: Request) {
         const prompt = `
           Context: Follow up with client.
           History: ${historyText}
-          Task: Short friendly Romanian follow-up.
+          Task: Write a short, friendly, 1-sentence Romanian follow-up asking if they have questions.
         `;
 
+        // Generate Content
+        // Using gemini-2.5-flash as 1.5 is deprecated
         const result = await ai.models.generateContent({
           model: 'gemini-2.5-flash',
           contents: prompt,
         });
         
+        // Correctly access text property (not a function)
         const aiResponse = result.text;
 
-        if (!aiResponse) continue;
+        if (!aiResponse) {
+          console.log(`No response generated for lead ${lead.id}`);
+          continue;
+        }
 
         await supabase.from('messages').insert({
           conversation_id: lead.id,
