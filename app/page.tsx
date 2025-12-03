@@ -187,23 +187,15 @@ export default function Home() {
   return (
     <main className="flex h-screen w-screen bg-gray-50 overflow-hidden">
       <div className={`${selectedId ? 'hidden md:flex' : 'flex'} w-full md:w-auto h-full flex-col`}>
-        <div className="bg-white border-r border-b border-gray-200 p-3">
-            <button
-              onClick={handleSync}
-              disabled={isSyncing}
-              className="p-2 w-full flex items-center justify-center gap-2 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 border border-gray-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              aria-label="Sync conversations"
-            >
-              <RefreshCw className={cn("w-4 h-4", isSyncing && "animate-spin")} />
-              {isSyncing ? "Syncing..." : "Sync Messages"}
-            </button>
-        </div>
+        {/* FIX: Pass missing props to Sidebar to fix type error and remove redundant sync button */}
         <Sidebar 
           conversations={filteredConversations}
           selectedId={selectedId}
           onSelect={setSelectedId}
           filter={filter}
           setFilter={setFilter}
+          isSyncing={isSyncing}
+          onSync={handleSync}
         />
       </div>
       

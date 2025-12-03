@@ -1,22 +1,33 @@
+
 import React from 'react';
 import { SidebarProps, FilterType } from '../types';
-import { Search, User, Clock, CheckCircle, MessageCircle } from 'lucide-react';
+import { Search, User, Clock, CheckCircle, MessageCircle, RefreshCw } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 const cn = (...inputs: (string | undefined | null | false)[]) => twMerge(clsx(inputs));
 
-export const Sidebar: React.FC<SidebarProps> = ({ conversations, selectedId, onSelect, filter, setFilter }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ conversations, selectedId, onSelect, filter, setFilter, isSyncing, onSync }) => {
   const filters: FilterType[] = ['All', 'Unsold', 'Follow-up Needed'];
 
   return (
     <div className="w-full md:w-80 h-full bg-white border-r border-gray-200 flex flex-col">
       {/* Header */}
       <div className="p-4 border-b border-gray-100">
-        <h1 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-          <MessageCircle className="w-6 h-6 text-blue-600" />
-          CRM Messenger
-        </h1>
+        <div className="flex justify-between items-center">
+          <h1 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+            <MessageCircle className="w-6 h-6 text-blue-600" />
+            CRM Messenger
+          </h1>
+          <button
+            onClick={onSync}
+            disabled={isSyncing}
+            className="p-2 text-gray-400 hover:text-gray-600 disabled:text-gray-300 disabled:cursor-not-allowed transition-colors"
+            aria-label="Sync conversations"
+          >
+            <RefreshCw className={cn("w-4 h-4", isSyncing && "animate-spin")} />
+          </button>
+        </div>
         <div className="mt-4 relative">
           <Search className="w-4 h-4 absolute left-3 top-3 text-gray-400" />
           <input 
@@ -49,7 +60,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ conversations, selectedId, onS
       <div className="flex-1 overflow-y-auto">
         {conversations.length === 0 ? (
           <div className="p-8 text-center text-gray-400 text-sm">
-            No conversations found.
+            {isSyncing ? "Syncing..." : "No conversations found."}
           </div>
         ) : (
           conversations.map((conv) => (

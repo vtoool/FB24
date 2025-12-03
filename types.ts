@@ -1,3 +1,4 @@
+
 export interface Conversation {
   id: string;
   client_name: string;
@@ -25,6 +26,8 @@ export interface SidebarProps {
   onSelect: (id: string) => void;
   filter: FilterType;
   setFilter: (filter: FilterType) => void;
+  isSyncing: boolean;
+  onSync: () => void;
 }
 
 export interface ChatWindowProps {
