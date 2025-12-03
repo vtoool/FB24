@@ -68,27 +68,26 @@ export async function GET(request: Request) {
           contents: prompt,
         });
         
-        // Remove parens from .text property
         const aiResponse = result?.text; 
 
         if (!aiResponse) {
             continue;
         }
 
-        // 4. Create Payload
         const newMessage: MessageInsert = {
           conversation_id: lead.id,
           content: aiResponse,
           sender_type: 'page',
         };
 
-        // 5. FORCE CAST TO ANY to bypass 'never' type inference error
+        // 4. Force Cast: Insert Message
         await supabase.from('messages').insert(newMessage as any);
 
+        // 5. Force Cast: Update Conversation (New Fix)
         await supabase.from('conversations').update({
           last_interaction_at: new Date().toISOString(),
           status: 'active'
-        }).eq('id', lead.id);
+        } as any).eq('id', lead.id);
 
         processedLeads.push({ id: lead.id, response: aiResponse });
       }
