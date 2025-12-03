@@ -3,9 +3,10 @@ import { createClient } from '@supabase/supabase-js';
 import { GoogleGenAI } from '@google/genai';
 import { Database } from '@/types/supabase';
 
-// 1. Define Explicit Row Types
+// 1. Define Helper Types for cleaner code
 type ConversationRow = Database['public']['Tables']['conversations']['Row'];
 type MessageRow = Database['public']['Tables']['messages']['Row'];
+type MessageInsert = Database['public']['Tables']['messages']['Insert'];
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -21,7 +22,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    // 2. Fetch leads (Explicitly typed)
+    // 2. Fetch leads (Explicitly typed return)
     const { data, error } = await supabase
       .from('conversations')
       .select('*')
@@ -45,16 +46,15 @@ export async function GET(request: Request) {
 
       if (diffHours >= 18 && diffHours <= 23) {
         
-        // 3. Fetch History (Now Explicitly typed as MessageRow[])
+        // 3. Fetch History (Explicitly typed return)
         const { data: history } = await supabase
             .from('messages')
-            .select('*') // Select all to be safe, or specify columns matching MessageRow
+            .select('*')
             .eq('conversation_id', lead.id)
             .order('created_at', { ascending: true })
             .limit(10)
-            .returns<MessageRow[]>(); // <--- FIX APPLIED HERE
+            .returns<MessageRow[]>();
             
-        // Now 'm' is correctly inferred as MessageRow
         const historyText = history?.map((m) => `${m.sender_type}: ${m.content}`).join('\n') || '';
 
         const prompt = `
@@ -64,21 +64,24 @@ export async function GET(request: Request) {
         `;
 
         const result = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
+          model: 'gemini-1.5-flash',
           contents: prompt,
         });
         
-        const aiResponse = result.text;
+        const aiResponse = result?.text?.();
 
         if (!aiResponse) {
             continue;
         }
 
-        await supabase.from('messages').insert({
+        // 4. Construct payload with strict typing to fix the Build Error
+        const newMessage: MessageInsert = {
           conversation_id: lead.id,
           content: aiResponse,
-          sender_type: 'page'
-        });
+          sender_type: 'page', // This is now accepted because of MessageInsert type
+        };
+
+        await supabase.from('messages').insert(newMessage);
 
         await supabase.from('conversations').update({
           last_interaction_at: new Date().toISOString(),
