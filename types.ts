@@ -1,23 +1,23 @@
 
 export interface Conversation {
   id: string;
-  client_name: string;
-  status: 'unsold' | 'sold' | 'follow-up' | 'new';
-  last_message_at: string;
-  last_message_by: 'client' | 'me';
-  has_auto_replied: boolean;
-  snippet: string;
+  psid: string;
+  customer_name: string | null;
+  status: 'active' | 'archived' | 'needs_follow_up';
+  last_interaction_at: string;
+  unread_count: number;
 }
 
 export interface Message {
   id: string;
   conversation_id: string;
-  text: string;
-  from_role: 'client' | 'me';
+  content: string;
+  sender_type: 'user' | 'page';
   created_at: string;
+  meta_message_id?: string | null;
 }
 
-export type FilterType = 'All' | 'Unsold' | 'Follow-up Needed';
+export type FilterType = 'All' | 'Active' | 'Needs Follow-up';
 
 // Props types
 export interface SidebarProps {

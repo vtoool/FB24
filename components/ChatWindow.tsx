@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 import { ChatWindowProps } from '../types';
 import { Send, MoreVertical, Phone, Video, Loader2, Bot } from 'lucide-react';
@@ -31,22 +32,24 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversation, messages, 
     );
   }
 
+  const displayName = conversation.customer_name || `User ${conversation.psid}`;
+
   return (
     <div className="flex-1 flex flex-col h-full bg-gray-50/50">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center shadow-sm">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white font-medium text-lg">
-            {conversation.client_name.charAt(0)}
+            {displayName.charAt(0)}
           </div>
           <div>
-            <h2 className="font-bold text-gray-900">{conversation.client_name}</h2>
+            <h2 className="font-bold text-gray-900">{displayName}</h2>
             <div className="flex items-center gap-2 text-xs text-gray-500">
               <span className={cn(
                 "w-2 h-2 rounded-full",
-                conversation.status === 'unsold' ? "bg-orange-400" : "bg-green-500"
+                conversation.status === 'active' ? "bg-green-500" : "bg-gray-400"
               )} />
-              {conversation.status.charAt(0).toUpperCase() + conversation.status.slice(1)}
+              {conversation.status.replace('_', ' ')}
             </div>
           </div>
         </div>
@@ -65,7 +68,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversation, messages, 
           </div>
         ) : (
           messages.map((msg) => {
-            const isMe = msg.from_role === 'me';
+            const isMe = msg.sender_type === 'page';
             return (
               <div key={msg.id} className={cn("flex", isMe ? "justify-end" : "justify-start")}>
                 <div className={cn(
@@ -74,7 +77,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversation, messages, 
                     ? "bg-blue-600 text-white rounded-br-none" 
                     : "bg-white text-gray-800 border border-gray-100 rounded-bl-none"
                 )}>
-                  {msg.text}
+                  {msg.content}
                   <div className={cn(
                     "text-[10px] mt-1 text-right opacity-70",
                     isMe ? "text-blue-100" : "text-gray-400"

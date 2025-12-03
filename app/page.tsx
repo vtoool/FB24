@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -6,11 +5,7 @@ import { supabase, mockConversations, mockMessages } from '../lib/supabase';
 import { Conversation, Message, FilterType } from '../types';
 import { Sidebar } from '../components/Sidebar';
 import { ChatWindow } from '../components/ChatWindow';
-import { RefreshCw } from 'lucide-react';
-import { clsx } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-
-const cn = (...inputs: (string | undefined | null | false)[]) => twMerge(clsx(inputs));
+import { useRouter } from 'next/navigation';
 
 export default function Home() {
   const [isMounted, setIsMounted] = useState(false);
@@ -21,6 +16,7 @@ export default function Home() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [isRealtime, setIsRealtime] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     setIsMounted(true);
@@ -34,7 +30,7 @@ export default function Home() {
     const { data, error } = await supabase
       .from('conversations')
       .select('*')
-      .order('last_message_at', { ascending: false });
+      .order('last_interaction_at', { ascending: false });
     
     if (error) {
       console.error("Error fetching conversations:", error);
@@ -59,9 +55,9 @@ export default function Home() {
              return prev.filter(c => c.id !== payload.old.id);
            }
            if (exists) {
-             return prev.map(c => c.id === newRecord.id ? newRecord : c).sort((a,b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime());
+             return prev.map(c => c.id === newRecord.id ? newRecord : c).sort((a,b) => new Date(b.last_interaction_at).getTime() - new Date(a.last_interaction_at).getTime());
            }
-           return [newRecord, ...prev].sort((a,b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime());
+           return [newRecord, ...prev].sort((a,b) => new Date(b.last_interaction_at).getTime() - new Date(a.last_interaction_at).getTime());
         });
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
@@ -111,12 +107,8 @@ export default function Home() {
   const filteredConversations = useMemo(() => {
     return conversations.filter(c => {
       if (filter === 'All') return true;
-      if (filter === 'Unsold') return c.status === 'unsold';
-      if (filter === 'Follow-up Needed') {
-        if (c.status !== 'unsold' || c.last_message_by === 'me') return false;
-        const diffHours = (new Date().getTime() - new Date(c.last_message_at).getTime()) / (1000 * 60 * 60);
-        return diffHours >= 18 && diffHours <= 23;
-      }
+      if (filter === 'Active') return c.status === 'active';
+      if (filter === 'Needs Follow-up') return c.status === 'needs_follow_up';
       return true;
     });
   }, [conversations, filter]);
@@ -130,8 +122,8 @@ export default function Home() {
     const newMsg: Message = {
       id: crypto.randomUUID(),
       conversation_id: selectedId,
-      text,
-      from_role: 'me',
+      content: text,
+      sender_type: 'page',
       created_at: new Date().toISOString()
     };
     
@@ -139,27 +131,23 @@ export default function Home() {
     setMessages(prev => [...prev, newMsg]);
     setConversations(prev => prev.map(c => 
       c.id === selectedId 
-        // FIX: Use 'as const' to prevent TypeScript from widening the literal type 'me' to 'string',
-        // which was causing a type mismatch with Conversation['last_message_by'].
-        ? { ...c, last_message_by: 'me' as const, last_message_at: newMsg.created_at, snippet: text } 
+        ? { ...c, last_interaction_at: newMsg.created_at, status: 'active' as const, unread_count: 0 } 
         : c
-    ).sort((a,b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime()));
+    ).sort((a,b) => new Date(b.last_interaction_at).getTime() - new Date(a.last_interaction_at).getTime()));
 
     // Database updates
     if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
       await Promise.all([
         supabase.from('messages').insert({
           conversation_id: selectedId,
-          text: text,
-          from_role: 'me',
+          content: text,
+          sender_type: 'page',
           created_at: newMsg.created_at
         }),
         supabase.from('conversations').update({
-          last_message_at: newMsg.created_at,
-          last_message_by: 'me',
-          snippet: text,
-          status: 'unsold', // Sending a message implies it's an active lead
-          has_auto_replied: false // Reset auto-reply status
+          last_interaction_at: newMsg.created_at,
+          status: 'active',
+          unread_count: 0
         }).eq('id', selectedId)
       ]);
     }
@@ -170,13 +158,22 @@ export default function Home() {
     setIsSyncing(true);
     try {
       const response = await fetch('/api/sync');
-      if (!response.ok) throw new Error('Sync failed');
       const result = await response.json();
+      
+      if (!response.ok) {
+        if (result.code === 'MISSING_TOKEN') {
+          if (confirm('Meta Access Token is missing. Go to settings to configure it?')) {
+            router.push('/settings');
+          }
+          return;
+        }
+        throw new Error(result.error || 'Sync failed');
+      }
+      
       await fetchConversations(); // Refresh list after sync
-      alert(result.message || 'Sync complete!');
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      alert('An error occurred during sync.');
+      alert(`Sync Error: ${error.message}`);
     } finally {
       setIsSyncing(false);
     }
@@ -187,7 +184,6 @@ export default function Home() {
   return (
     <main className="flex h-screen w-screen bg-gray-50 overflow-hidden">
       <div className={`${selectedId ? 'hidden md:flex' : 'flex'} w-full md:w-auto h-full flex-col`}>
-        {/* FIX: Pass missing props to Sidebar to fix type error and remove redundant sync button */}
         <Sidebar 
           conversations={filteredConversations}
           selectedId={selectedId}
@@ -210,7 +206,7 @@ export default function Home() {
 
       <div className="fixed bottom-4 left-4 z-50">
         <div className="bg-black/80 text-white text-[10px] px-2 py-1 rounded backdrop-blur-sm">
-           Next.js Preview Mode • Realtime: {isRealtime ? 'Active' : 'Mock'}
+           Polling Architecture • Realtime: {isRealtime ? 'Active' : 'Mock'}
         </div>
       </div>
     </main>

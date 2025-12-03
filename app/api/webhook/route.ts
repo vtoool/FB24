@@ -1,25 +1,19 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Database } from '@/types/supabase';
 
 // --- BULLETPROOF INITIALIZATION ---
-// This checks every possible variable name so the build won't fail
 const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
   console.error("Build failed: Missing Supabase Keys.");
-  // We throw an error here to stop the build and force you to fix Env Vars
-  // throw new Error("Supabase URL or Key is missing from Environment Variables!"); 
-  // Commented out throw to prevent build failure on Vercel without envs
 }
 
-// We use (!) because we explicitly checked for existence above, satisfying TS
-// Using Database type for strict typing
 const supabase = createClient<Database>(supabaseUrl || '', supabaseKey || '');
 // ----------------------------------
 
-// Verify Token for Facebook
 const VERIFY_TOKEN = process.env.FB_VERIFY_TOKEN;
 
 export async function GET(req: NextRequest) {
@@ -44,17 +38,14 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
 
     if (body.object === 'page') {
-      // Iterate over each entry - there may be multiple if batched
       for (const entry of body.entry) {
-        // Iterate over each messaging event
-        // Safety check: sometimes entry.messaging is undefined if it's a different event type
         const webhook_event = entry.messaging?.[0];
         
         if (webhook_event) {
-            const sender_psid = webhook_event.sender.id;
+            const senderPsid = webhook_event.sender.id;
             
-            if (webhook_event.message) {
-              await handleMessage(sender_psid, webhook_event.message);
+            if (webhook_event.message && webhook_event.message.text) {
+              await handleMessage(senderPsid, webhook_event.message);
             }
         }
       }
@@ -70,37 +61,35 @@ export async function POST(req: NextRequest) {
 
 async function handleMessage(senderPsid: string, receivedMessage: any) {
   const text = receivedMessage.text;
-  if (!text) return; // Ignore non-text messages for now
 
   // 1. Upsert Conversation
-  // We assume 'senderPsid' maps to a conversation ID or we store PSID in the conversation table.
-  const now = new Date().toISOString();
-
-  // Try to find existing conversation by PSID (assuming id is PSID for this demo)
-  const conversationId = senderPsid; 
-
-  const { error: upsertError } = await supabase
+  const { data: conversation, error: convoError } = await supabase
     .from('conversations')
     .upsert({
-      id: conversationId,
-      client_name: `Facebook User ${senderPsid.slice(0,4)}`, // Placeholder name
-      last_message_at: now,
-      last_message_by: 'client',
-      snippet: text,
-      has_auto_replied: false, // Reset this flag on new client message
-      status: 'unsold' // Default status
-    }, { onConflict: 'id' });
+      psid: senderPsid,
+      status: 'active',
+      last_interaction_at: new Date().toISOString(),
+      unread_count: 1, // Increment logic would go here in production
+      // We do not have customer_name from this webhook event usually
+    }, { onConflict: 'psid' })
+    .select()
+    .single();
 
-  if (upsertError) {
-    console.error('Error upserting conversation:', upsertError);
+  if (convoError || !conversation) {
+    console.error('Error upserting conversation:', convoError);
+    // In a real scenario, we might want to retry or throw
     return;
   }
 
-  // 2. Insert Message
-  await supabase.from('messages').insert({
-    conversation_id: conversationId,
-    text: text,
-    from_role: 'client',
-    created_at: now
+  // 2. Insert Message using the returned conversation ID
+  const { error: msgError } = await supabase.from('messages').insert({
+    conversation_id: conversation.id,
+    content: text,
+    sender_type: 'user',
+    meta_message_id: receivedMessage.mid || null
   });
+
+  if (msgError) {
+    console.error('Error inserting message:', msgError);
+  }
 }

@@ -1,3 +1,4 @@
+
 export type Json =
   | string
   | number
@@ -12,52 +13,69 @@ export interface Database {
       conversations: {
         Row: {
           id: string
-          client_name: string
-          status: 'unsold' | 'sold' | 'follow-up' | 'new'
-          last_message_at: string
-          last_message_by: 'client' | 'me'
-          has_auto_replied: boolean
-          snippet: string | null
+          psid: string
+          customer_name: string | null
+          status: 'active' | 'archived' | 'needs_follow_up'
+          last_interaction_at: string
+          unread_count: number
         }
         Insert: {
-          id: string
-          client_name: string
-          status?: 'unsold' | 'sold' | 'follow-up' | 'new'
-          last_message_at?: string
-          last_message_by?: 'client' | 'me'
-          has_auto_replied?: boolean
-          snippet?: string | null
+          id?: string
+          psid: string
+          customer_name?: string | null
+          status?: 'active' | 'archived' | 'needs_follow_up'
+          last_interaction_at?: string
+          unread_count?: number
         }
         Update: {
           id?: string
-          client_name?: string
-          status?: 'unsold' | 'sold' | 'follow-up' | 'new'
-          last_message_at?: string
-          last_message_by?: 'client' | 'me'
-          has_auto_replied?: boolean
-          snippet?: string | null
+          psid?: string
+          customer_name?: string | null
+          status?: 'active' | 'archived' | 'needs_follow_up'
+          last_interaction_at?: string
+          unread_count?: number
         }
       }
       messages: {
         Row: {
           id: string
           conversation_id: string
-          text: string
-          from_role: 'client' | 'me'
+          content: string
+          sender_type: 'user' | 'page'
+          meta_message_id: string | null
           created_at: string
         }
         Insert: {
           id?: string
           conversation_id: string
-          text: string
-          from_role: 'client' | 'me'
+          content: string
+          sender_type: 'user' | 'page'
+          meta_message_id?: string | null
           created_at?: string
         }
         Update: {
           id?: string
           conversation_id?: string
-          text?: string
-          from_role?: 'client' | 'me'
+          content?: string
+          sender_type?: 'user' | 'page'
+          meta_message_id?: string | null
+          created_at?: string
+        }
+      }
+      settings: {
+        Row: {
+          user_id: string
+          meta_page_access_token: string | null
+          created_at: string
+        }
+        Insert: {
+          user_id: string
+          meta_page_access_token?: string | null
+          created_at?: string
+        }
+        Update: {
+          user_id?: string
+          meta_page_access_token?: string | null
           created_at?: string
         }
       }
