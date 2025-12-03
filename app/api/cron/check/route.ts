@@ -22,7 +22,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    // 2. Fetch leads (Explicitly typed return)
+    // 2. Fetch leads
     const { data, error } = await supabase
       .from('conversations')
       .select('*')
@@ -46,7 +46,7 @@ export async function GET(request: Request) {
 
       if (diffHours >= 18 && diffHours <= 23) {
         
-        // 3. Fetch History (Explicitly typed return)
+        // 3. Fetch History
         const { data: history } = await supabase
             .from('messages')
             .select('*')
@@ -68,17 +68,17 @@ export async function GET(request: Request) {
           contents: prompt,
         });
         
-        const aiResponse = result?.text?.();
+        // --- FIX: Removed () from .text ---
+        const aiResponse = result?.text; 
 
         if (!aiResponse) {
             continue;
         }
 
-        // 4. Construct payload with strict typing to fix the Build Error
         const newMessage: MessageInsert = {
           conversation_id: lead.id,
           content: aiResponse,
-          sender_type: 'page', // This is now accepted because of MessageInsert type
+          sender_type: 'page',
         };
 
         await supabase.from('messages').insert(newMessage);
