@@ -3,13 +3,15 @@ import { createClient } from '@supabase/supabase-js';
 import { GoogleGenAI } from '@google/genai';
 import { Database } from '@/types/supabase';
 
-// Define the exact Row type to prevent 'never' inference errors
+// 1. Define Explicit Row Types
 type ConversationRow = Database['public']['Tables']['conversations']['Row'];
+type MessageRow = Database['public']['Tables']['messages']['Row'];
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 const supabase = createClient<Database>(supabaseUrl!, supabaseKey!);
+
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
 
 export async function GET(request: Request) {
@@ -19,16 +21,15 @@ export async function GET(request: Request) {
   }
 
   try {
-    // 1. Fetch leads explicitly typed as ConversationRow[]
+    // 2. Fetch leads (Explicitly typed)
     const { data, error } = await supabase
       .from('conversations')
       .select('*')
       .eq('status', 'needs_follow_up')
-      .returns<ConversationRow[]>(); // Fixes 'never' type error
+      .returns<ConversationRow[]>();
 
     if (error) throw error;
     
-    // Handle null data safely
     const leads = data || [];
 
     if (leads.length === 0) {
@@ -42,16 +43,18 @@ export async function GET(request: Request) {
       const lastMsgTime = new Date(lead.last_interaction_at);
       const diffHours = (now.getTime() - lastMsgTime.getTime()) / (1000 * 60 * 60);
 
-      // Simple time check (18-23h)
       if (diffHours >= 18 && diffHours <= 23) {
         
+        // 3. Fetch History (Now Explicitly typed as MessageRow[])
         const { data: history } = await supabase
             .from('messages')
-            .select('content, sender_type')
+            .select('*') // Select all to be safe, or specify columns matching MessageRow
             .eq('conversation_id', lead.id)
             .order('created_at', { ascending: true })
-            .limit(10);
+            .limit(10)
+            .returns<MessageRow[]>(); // <--- FIX APPLIED HERE
             
+        // Now 'm' is correctly inferred as MessageRow
         const historyText = history?.map((m) => `${m.sender_type}: ${m.content}`).join('\n') || '';
 
         const prompt = `
@@ -60,19 +63,15 @@ export async function GET(request: Request) {
           Task: Write a short, friendly, 1-sentence Romanian follow-up asking if they have questions.
         `;
 
-        // Generate Content
-        // Using gemini-2.5-flash as 1.5 is deprecated
         const result = await ai.models.generateContent({
           model: 'gemini-2.5-flash',
           contents: prompt,
         });
         
-        // Correctly access text property (not a function)
         const aiResponse = result.text;
 
         if (!aiResponse) {
-          console.log(`No response generated for lead ${lead.id}`);
-          continue;
+            continue;
         }
 
         await supabase.from('messages').insert({
