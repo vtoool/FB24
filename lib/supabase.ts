@@ -1,11 +1,8 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient as createClientSSR } from '@/utils/supabase/client';
 import { Conversation, Message } from '../types';
 
-// NOTE: In a real Next.js app, these would be process.env.NEXT_PUBLIC_SUPABASE_URL
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key';
-
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Export the typed client
+export const supabase = createClientSSR();
 
 // --- MOCK DATA FOR PREVIEW MODE (Since we don't have real DB connection here) ---
 export const mockConversations: Conversation[] = [
