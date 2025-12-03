@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { GoogleGenAI } from '@google/genai';
 import { Database } from '@/types/supabase';
 
-// 1. Define Helper Types for cleaner code
+// 1. Define Helper Types
 type ConversationRow = Database['public']['Tables']['conversations']['Row'];
 type MessageRow = Database['public']['Tables']['messages']['Row'];
 type MessageInsert = Database['public']['Tables']['messages']['Insert'];
@@ -68,20 +68,22 @@ export async function GET(request: Request) {
           contents: prompt,
         });
         
-        // --- FIX: Removed () from .text ---
+        // Remove parens from .text property
         const aiResponse = result?.text; 
 
         if (!aiResponse) {
             continue;
         }
 
+        // 4. Create Payload
         const newMessage: MessageInsert = {
           conversation_id: lead.id,
           content: aiResponse,
           sender_type: 'page',
         };
 
-        await supabase.from('messages').insert(newMessage);
+        // 5. FORCE CAST TO ANY to bypass 'never' type inference error
+        await supabase.from('messages').insert(newMessage as any);
 
         await supabase.from('conversations').update({
           last_interaction_at: new Date().toISOString(),
