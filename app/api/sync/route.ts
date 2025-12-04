@@ -24,55 +24,78 @@ export async function GET(request: Request) {
 
     const token = settings.meta_page_access_token;
 
-    // 3. Debug: Call Meta API
+    // 3. Call Meta API
+    // We fetch messages{from} specifically to get the sender's name
     const url = `https://graph.facebook.com/v19.0/me/conversations?fields=participants,updated_time,messages{message,created_time,from,id}&access_token=${token}`;
     
     const fbResponse = await fetch(url);
     const fbData = await fbResponse.json();
 
-    // 4. CRITICAL: Return raw data to user to see what is happening
     if (fbData.error) {
-        return NextResponse.json({ 
-            status: "Meta API Failed", 
-            error: fbData.error 
-        }, { status: 400 });
+        return NextResponse.json({ error: fbData.error }, { status: 400 });
     }
 
-    // 5. Process if data exists
     const conversations = fbData.data || [];
-    const logs = [];
+    let processedCount = 0;
 
     for (const convo of conversations) {
         const psid = convo.participants?.data[0]?.id;
-        if (!psid) {
-            logs.push(`Skipped convo (No PSID): ${convo.id}`);
+        if (!psid) continue;
+
+        // 4. SMART NAME DETECTION
+        // Default: Use the participant name from the top level
+        let customerName = convo.participants?.data[0]?.name || "Unknown User";
+
+        // Refinement: Look at the last message. 
+        // If the message is NOT from the Page (it's from the user), use that name.
+        // This fixes cases where the Participant list is generic.
+        const messages = convo.messages?.data || [];
+        const lastUserMessage = messages.find((m: any) => m.from?.id === psid);
+        
+        if (lastUserMessage && lastUserMessage.from?.name) {
+            customerName = lastUserMessage.from.name;
+        }
+
+        // 5. Upsert Conversation (Now with Name!)
+        const { data: savedConvo, error: convoError } = await supabase
+            .from('conversations')
+            .upsert({
+                psid: psid,
+                customer_name: customerName, // <--- THE MISSING FIELD
+                status: 'active',
+                last_interaction_at: convo.updated_time,
+                unread_count: 0
+            } as any, { onConflict: 'psid' })
+            .select()
+            .single();
+
+        if (convoError) {
+            console.error(`Error saving convo ${psid}:`, convoError);
             continue;
         }
 
-        const { error } = await supabase.from('conversations').upsert({
-            psid: psid,
-            status: 'active',
-            last_interaction_at: convo.updated_time,
-            unread_count: 0
-        } as any, { onConflict: 'psid' });
-
-        if (error) {
-            logs.push(`DB Error for ${psid}: ${error.message}`);
-        } else {
-            logs.push(`Success for ${psid}`);
+        // 6. Upsert Messages
+        if (savedConvo) {
+            for (const msg of messages) {
+                // Determine sender type
+                const isUser = msg.from?.id === psid;
+                
+                await supabase.from('messages').upsert({
+                    conversation_id: savedConvo.id,
+                    content: msg.message || '[Attachment]',
+                    meta_message_id: msg.id,
+                    sender_type: isUser ? 'user' : 'page',
+                    created_at: msg.created_time
+                } as any, { onConflict: 'meta_message_id' });
+            }
         }
+        processedCount++;
     }
 
-    return NextResponse.json({ 
-        success: true, 
-        meta_response_summary: {
-            total_found: conversations.length,
-            raw_data_preview: conversations.slice(0, 2) // Show first 2 convos
-        },
-        database_logs: logs
-    });
+    return NextResponse.json({ success: true, synced: processedCount });
 
   } catch (error: any) {
+    console.error('Sync Job Error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
