@@ -104,12 +104,13 @@ export default function Home() {
     loadMessages();
   }, [selectedId, supabase]);
 
-  // 4. Filter Logic
+  // 4. Filter Logic (Note: Detailed logic is handled inside Sidebar component too)
   const filteredConversations = useMemo(() => {
     return conversations.filter(c => {
       if (filter === 'All') return true;
-      if (filter === 'Needs Follow-up') return c.status === 'needs_follow_up';
-      return true;
+      // Note: We rely on Sidebar.tsx to do the math for "Needs Follow-up"
+      // But we pass the raw filter state down so Sidebar controls the view
+      return true; 
     });
   }, [conversations, filter]);
 
@@ -119,7 +120,6 @@ export default function Home() {
   const handleSendMessage = async (text: string) => {
     if (!selectedId || !activeConversation) return;
     
-    // A. Optimistic UI
     const tempId = crypto.randomUUID();
     const newMsg: Message = {
       id: tempId,
@@ -132,7 +132,6 @@ export default function Home() {
     setMessages(prev => [...prev, newMsg]);
     
     try {
-        // B. Get Token
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error("User not authenticated");
 
@@ -146,7 +145,6 @@ export default function Home() {
             throw new Error("No Page Access Token found in Settings");
         }
 
-        // C. Call Meta API
         const psid = activeConversation.psid;
         const fbRes = await fetch(`https://graph.facebook.com/v19.0/me/messages?access_token=${settings.meta_page_access_token}`, {
             method: 'POST',
@@ -165,7 +163,6 @@ export default function Home() {
             throw new Error(fbData.error.message || "Failed to send to Facebook");
         }
 
-        // D. Save to DB
         await Promise.all([
             supabase.from('messages').insert({
                 conversation_id: selectedId,
@@ -193,11 +190,10 @@ export default function Home() {
   // 6. HIGH-PERFORMANCE BATCH SYNC (Client-Side)
   const handleSync = async () => {
     setIsSyncing(true);
-    const MAX_PAGES = 6; // Limit to ~300 conversations
+    const MAX_PAGES = 6; 
     let pagesProcessed = 0;
     
     try {
-      // A. Get Token
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
@@ -227,7 +223,6 @@ export default function Home() {
 
         const conversationsData = fbData.data || [];
         
-        // --- BATCH PREPARATION ---
         const convoBatch: any[] = [];
         const msgBatch: any[] = [];
 
@@ -264,7 +259,7 @@ export default function Home() {
 
            if (msgs.length > 0) {
              const recent = msgs.slice(0, 5).map((m: any) => ({
-                temp_psid: psid, // Helper to link back
+                temp_psid: psid,
                 content: m.message || '[Attachment]',
                 meta_message_id: m.id,
                 sender_type: m.from?.id === psid ? 'user' : 'page',
@@ -274,9 +269,7 @@ export default function Home() {
            }
         }
 
-        // --- BULK EXECUTION ---
         if (convoBatch.length > 0) {
-            // 1. Bulk Upsert Conversations & Return IDs
             const { data: savedConvos, error: convoError } = await supabase
                 .from('conversations')
                 .upsert(convoBatch, { onConflict: 'psid' })
@@ -287,7 +280,6 @@ export default function Home() {
                 continue;
             }
 
-            // 2. Map Message Batch to correct Conversation UUIDs
             if (savedConvos && msgBatch.length > 0) {
                 const idMap = new Map(savedConvos.map(c => [c.psid, c.id]));
                 
@@ -301,9 +293,8 @@ export default function Home() {
                         sender_type: m.sender_type,
                         created_at: m.created_at
                     };
-                }).filter(Boolean); // Remove nulls
+                }).filter(Boolean);
 
-                // 3. Bulk Upsert Messages
                 if (finalMsgBatch.length > 0) {
                     await supabase.from('messages').upsert(finalMsgBatch, { onConflict: 'meta_message_id' });
                 }
@@ -328,6 +319,7 @@ export default function Home() {
 
   return (
     <main className="flex h-screen w-screen bg-background overflow-hidden">
+      {/* UI FIX: Added shrink-0 and fixed width to prevent collapse */}
       <div className={`${selectedId ? 'hidden md:flex' : 'flex'} w-full md:w-80 shrink-0 h-full flex-col border-r border-border`}>
         <Sidebar 
           conversations={filteredConversations}
@@ -340,6 +332,7 @@ export default function Home() {
         />
       </div>
       
+      {/* UI FIX: Added min-w-0 to prevent flex item from growing infinitely */}
       <div className={`${!selectedId ? 'hidden md:flex' : 'flex'} flex-1 h-full min-w-0`}>
         <ChatWindow 
           conversation={activeConversation}
