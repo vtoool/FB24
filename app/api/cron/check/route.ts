@@ -1,3 +1,4 @@
+
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { GoogleGenAI } from '@google/genai';
@@ -9,7 +10,8 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PU
 // NUCLEAR FIX: Initialize client without <Database> type to disable strict schema checks for this file.
 const supabase = createClient(supabaseUrl!, supabaseKey!);
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+// FIX: Initialize GoogleGenAI with a non-null asserted API_KEY as per guidelines.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization');
@@ -57,11 +59,13 @@ export async function GET(request: Request) {
         `;
 
         const result = await ai.models.generateContent({
-          model: 'gemini-1.5-flash',
+          // FIX: Use 'gemini-2.5-flash' for basic text tasks instead of the deprecated 'gemini-1.5-flash'.
+          model: 'gemini-2.5-flash',
           contents: prompt,
         });
         
-        const aiResponse = result?.text; 
+        // FIX: Access the 'text' property directly as per the coding guidelines.
+        const aiResponse = result.text; 
 
         if (!aiResponse) {
             continue;
