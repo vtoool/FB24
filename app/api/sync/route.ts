@@ -1,138 +1,86 @@
-
 import { NextResponse } from 'next/server';
-import { createClient } from '@/utils/supabase/server';
+import { createClient } from '@/utils/supabase/server'; // Ensure you use the server client
 
-export async function GET() {
+export async function GET(request: Request) {
+  // 1. Initialize Supabase
   const supabase = createClient();
 
-  try {
-    // 1. Authenticate & Get Settings
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
-    if (authError || !user) {
-      // For the sake of the demo, if no auth, we cannot access settings securely.
-      // However, if running locally without auth UI, we might fallback.
-      // Assuming Auth is required for this new polling architecture:
-      return NextResponse.json({ error: "Unauthorized. Please log in." }, { status: 401 });
-    }
+  // 2. Check Auth
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
 
+  try {
+    // 3. Get the Token from Settings
     const { data: settings } = await supabase
-      .from('settings')
-      .select('meta_page_access_token')
-      .eq('user_id', user.id)
-      .single();
+        .from('settings')
+        .select('meta_page_access_token')
+        .eq('user_id', user.id)
+        .maybeSingle();
 
     if (!settings?.meta_page_access_token) {
-      return NextResponse.json({ 
-        error: "Missing Meta Access Token. Please configure it in Settings.",
-        code: "MISSING_TOKEN"
-      }, { status: 400 });
+        return NextResponse.json({ error: 'No Access Token found in Settings' }, { status: 400 });
     }
 
     const PAGE_ACCESS_TOKEN = settings.meta_page_access_token;
 
-    // 2. Get Page ID (to determine "Me")
-    const meRes = await fetch(`https://graph.facebook.com/v19.0/me?access_token=${PAGE_ACCESS_TOKEN}`);
-    const meData = await meRes.json();
-    
-    if (meData.error) {
-      throw new Error(`Meta API Error: ${meData.error.message}`);
-    }
-    
-    const PAGE_ID = meData.id;
+    // 4. Call Meta Graph API
+    // Fetch conversations + nested messages
+    const fbResponse = await fetch(
+        `https://graph.facebook.com/v19.0/me/conversations?fields=participants,updated_time,messages{message,created_time,from,id}&access_token=${PAGE_ACCESS_TOKEN}`
+    );
 
-    // 3. Fetch Conversations with Messages
-    let allThreads: any[] = [];
-    let url = `https://graph.facebook.com/v19.0/me/conversations?fields=id,updated_time,snippet,senders,messages.limit(20){message,from,created_time,id}&limit=50&access_token=${PAGE_ACCESS_TOKEN}`;
-    
-    // Fetch up to 3 batches
-    for (let i = 0; i < 3; i++) {
-      const res = await fetch(url);
-      const data = await res.json();
-      if (data.error) throw new Error(data.error.message);
-      if (data.data) allThreads = [...allThreads, ...data.data];
-      if (data.paging?.next) url = data.paging.next; else break;
+    if (!fbResponse.ok) {
+        const errText = await fbResponse.text();
+        return NextResponse.json({ error: 'Meta API Error', details: errText }, { status: fbResponse.status });
     }
 
-    console.log(`Processing ${allThreads.length} threads for Page ID: ${PAGE_ID}...`);
-    let count = 0;
+    const fbData = await fbResponse.json();
+    const conversations = fbData.data || [];
+    let processedCount = 0;
 
-    for (const thread of allThreads) {
-      // Determine Customer Name (Sender that isn't the page)
-      // Note: 'senders' usually includes both parties.
-      const customer = thread.senders?.data.find((s: any) => s.id !== PAGE_ID);
-      const customerName = customer?.name || "Unknown User";
-      const psid = thread.id; 
+    // 5. Process Data
+    for (const convo of conversations) {
+        const psid = convo.participants?.data[0]?.id; // The customer ID
+        if (!psid) continue;
 
-      // 4. Determine Status based on last message
-      let status: 'active' | 'needs_follow_up' = 'active';
-      let lastMsgTime = thread.updated_time;
+        // Upsert Conversation
+        const { data: savedConvo, error: convoError } = await supabase
+            .from('conversations')
+            .upsert({
+                psid: psid,
+                status: 'active', // Default status
+                last_interaction_at: convo.updated_time,
+                // We use 'as any' here if you have strict type issues, 
+                // but usually the DB columns match the JSON logic.
+            }, { onConflict: 'psid' })
+            .select()
+            .single();
 
-      if (thread.messages?.data && thread.messages.data.length > 0) {
-        // Graph API returns messages in reverse chronological order (newest first) usually, 
-        // but 'messages' edge order can vary. Safe bet: sort them.
-        const sortedMsgs = [...thread.messages.data].sort((a: any, b: any) => 
-          new Date(b.created_time).getTime() - new Date(a.created_time).getTime()
-        );
-        
-        const lastMsg = sortedMsgs[0];
-        lastMsgTime = lastMsg.created_time;
-        
-        // LOGIC: If last message sender ID != Page ID -> needs_follow_up
-        // Otherwise -> active
-        if (lastMsg.from?.id !== PAGE_ID) {
-          status = 'needs_follow_up';
-        } else {
-          status = 'active';
+        if (convoError) {
+            console.error('Convo Save Error:', convoError);
+            continue;
         }
-      }
 
-      // 5. Upsert Conversation
-      const { data: conv, error: convError } = await supabase
-        .from('conversations')
-        .upsert({
-          psid: psid,
-          customer_name: customerName,
-          last_interaction_at: lastMsgTime,
-          status: status,
-          // We don't overwrite unread_count blindly here, or we calculate it. 
-          // For now, let's leave unread_count as is or default to 0 if new.
-        }, { onConflict: 'psid' })
-        .select()
-        .single();
-
-      if (convError || !conv) {
-         console.error("Conv Error", convError);
-         continue;
-      }
-
-      // 6. Insert Messages
-      if (thread.messages?.data) {
-        const messagesToInsert = thread.messages.data.map((m: any) => ({
-          conversation_id: conv.id,
-          content: m.message || '[Attachment]',
-          sender_type: m.from?.id === PAGE_ID ? 'page' : 'user',
-          meta_message_id: m.id,
-          created_at: m.created_time
-        }));
-
-        const { error: msgError } = await supabase
-          .from('messages')
-          .upsert(messagesToInsert, { onConflict: 'id', ignoreDuplicates: true });
-          
-        if (msgError) console.error("Msg Error", msgError);
-      }
-      count++;
+        // Upsert Messages (Last 25 usually returned by default)
+        const messages = convo.messages?.data || [];
+        for (const msg of messages) {
+            await supabase.from('messages').upsert({
+                conversation_id: savedConvo.id,
+                content: msg.message,
+                meta_message_id: msg.id,
+                sender_type: msg.from?.id === psid ? 'user' : 'page',
+                created_at: msg.created_time
+            }, { onConflict: 'meta_message_id' });
+        }
+        processedCount++;
     }
 
-    return NextResponse.json({ 
-      success: true, 
-      count: count, 
-      message: `Synced ${count} conversations successfully.` 
-    });
+    return NextResponse.json({ success: true, synced: processedCount });
 
   } catch (error: any) {
-    console.error("Sync Error:", error);
+    console.error('Sync Error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
