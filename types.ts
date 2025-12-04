@@ -6,6 +6,7 @@ export interface Conversation {
   status: 'active' | 'archived' | 'needs_follow_up';
   last_interaction_at: string;
   unread_count: number;
+  last_message_preview?: string;
 }
 
 export interface Message {

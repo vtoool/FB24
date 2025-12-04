@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChatWindowProps } from '../types';
-import { Send, MoreVertical, Phone, Video, Loader2, Bot } from 'lucide-react';
+import { Send, MoreVertical, Loader2, Bot } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -43,19 +43,17 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversation, messages, 
           </div>
           <div>
             <h2 className="font-bold text-foreground">{displayName}</h2>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span className={cn(
-                "w-2 h-2 rounded-full",
-                conversation.status === 'active' ? "bg-green-500" : "bg-gray-400"
-              )} />
-              {conversation.status.replace('_', ' ')}
-            </div>
+            {/* Removed "Active" status hallucination. Can add specific tags here later if needed. */}
+            {conversation.status === 'needs_follow_up' && (
+               <p className="text-xs text-orange-500 font-medium">Needs Reply</p>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-4 text-muted-foreground">
-          <button className="hover:text-foreground transition-colors"><Phone className="w-5 h-5" /></button>
-          <button className="hover:text-foreground transition-colors"><Video className="w-5 h-5" /></button>
-          <button className="hover:text-foreground transition-colors"><MoreVertical className="w-5 h-5" /></button>
+          {/* Removed Phone/Video buttons */}
+          <button className="hover:text-foreground transition-colors" title="More Options">
+            <MoreVertical className="w-5 h-5" />
+          </button>
         </div>
       </div>
 
