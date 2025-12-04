@@ -1,4 +1,3 @@
-
 export interface Conversation {
   id: string;
   psid: string;
@@ -7,6 +6,7 @@ export interface Conversation {
   last_interaction_at: string;
   unread_count: number;
   last_message_preview?: string;
+  last_message_by?: 'user' | 'page'; // <--- THIS is the missing key fixing the build
 }
 
 export interface Message {
