@@ -115,11 +115,11 @@ export default function Home() {
 
   const activeConversation = conversations.find(c => c.id === selectedId) || null;
 
-// 5. Send Message Handler (Now with Meta API integration)
+  // 5. Send Message Logic (With Meta API)
   const handleSendMessage = async (text: string) => {
     if (!selectedId || !activeConversation) return;
     
-    // A. Optimistic UI Update (Instant feedback)
+    // A. Optimistic UI
     const tempId = crypto.randomUUID();
     const newMsg: Message = {
       id: tempId,
@@ -132,7 +132,7 @@ export default function Home() {
     setMessages(prev => [...prev, newMsg]);
     
     try {
-        // B. Get the Access Token (Required to send)
+        // B. Get Token
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error("User not authenticated");
 
@@ -146,7 +146,7 @@ export default function Home() {
             throw new Error("No Page Access Token found in Settings");
         }
 
-        // C. CALL META API (The missing link!)
+        // C. Call Meta API
         const psid = activeConversation.psid;
         const fbRes = await fetch(`https://graph.facebook.com/v19.0/me/messages?access_token=${settings.meta_page_access_token}`, {
             method: 'POST',
@@ -165,8 +165,7 @@ export default function Home() {
             throw new Error(fbData.error.message || "Failed to send to Facebook");
         }
 
-        // D. Save to Supabase (Only if Meta succeeded)
-        // We use the real message ID from Facebook (fbData.message_id)
+        // D. Save to DB
         await Promise.all([
             supabase.from('messages').insert({
                 conversation_id: selectedId,
@@ -177,7 +176,7 @@ export default function Home() {
             }),
             supabase.from('conversations').update({
                 last_interaction_at: new Date().toISOString(),
-                status: 'active', // Reset status because we replied
+                status: 'active',
                 unread_count: 0,
                 last_message_preview: text,
                 last_message_by: 'page'
@@ -187,12 +186,11 @@ export default function Home() {
     } catch (error: any) {
         console.error("Send Error:", error);
         alert(`Could not send message: ${error.message}`);
-        // Optional: Remove the optimistic message here if you want perfect data consistency
         setMessages(prev => prev.filter(m => m.id !== tempId));
     }
   };
   
-// 6. HIGH-PERFORMANCE BATCH SYNC
+  // 6. HIGH-PERFORMANCE BATCH SYNC (Client-Side)
   const handleSync = async () => {
     setIsSyncing(true);
     const MAX_PAGES = 6; // Limit to ~300 conversations
@@ -220,7 +218,7 @@ export default function Home() {
       let nextUrl = `https://graph.facebook.com/v19.0/me/conversations?fields=participants,updated_time,messages{message,created_time,from,id}&limit=50&access_token=${token}`;
 
       while (nextUrl && pagesProcessed < MAX_PAGES) {
-        console.log(`Fetching Page ${pagesProcessed + 1}...`);
+        console.log(`Syncing Page ${pagesProcessed + 1}...`);
         
         const fbRes = await fetch(nextUrl);
         const fbData = await fbRes.json();
@@ -237,7 +235,6 @@ export default function Home() {
            const psid = convo.participants?.data[0]?.id;
            if (!psid) continue;
 
-           // Calculate Metadata Locally
            let customerName = convo.participants?.data[0]?.name || "Unknown";
            let lastMessageBy = 'user';
            let lastMessagePreview = '';
@@ -255,7 +252,6 @@ export default function Home() {
              }
            }
 
-           // Add to Conversation Batch
            convoBatch.push({
                 psid: psid,
                 customer_name: customerName,
@@ -266,19 +262,8 @@ export default function Home() {
                 unread_count: 0
            });
 
-           // Add to Message Batch (Limit 5 newest per convo to keep payload light)
            if (msgs.length > 0) {
              const recent = msgs.slice(0, 5).map((m: any) => ({
-                // We need to fetch the conversation ID later, but for bulk insert
-                // we can rely on Supabase upserting the conversation first.
-                // However, without the UUID, we need a strategy.
-                // STRATEGY: We insert conversations, then fetch their IDs map, then insert messages.
-                // For simplicity/speed in client-side sync, we might have to query specific IDs if we don't have them.
-                // optimization: upsert returns data.
-                
-                // TEMP FIX: To do true bulk insert of messages, we need the conversation UUIDs.
-                // Since 'psid' is unique, we can rely on that if we had a join, but we don't.
-                // So we will do 1 Bulk Request for Conversations, get the IDs back, then 1 Bulk for Messages.
                 temp_psid: psid, // Helper to link back
                 content: m.message || '[Attachment]',
                 meta_message_id: m.id,
@@ -295,7 +280,7 @@ export default function Home() {
             const { data: savedConvos, error: convoError } = await supabase
                 .from('conversations')
                 .upsert(convoBatch, { onConflict: 'psid' })
-                .select('id, psid'); // Get the UUIDs back
+                .select('id, psid');
 
             if (convoError) {
                 console.error("Batch Convo Error", convoError);
@@ -306,13 +291,17 @@ export default function Home() {
             if (savedConvos && msgBatch.length > 0) {
                 const idMap = new Map(savedConvos.map(c => [c.psid, c.id]));
                 
-                const finalMsgBatch = msgBatch.map(m => ({
-                    conversation_id: idMap.get(m.temp_psid), // Link using the map
-                    content: m.content,
-                    meta_message_id: m.meta_message_id,
-                    sender_type: m.sender_type,
-                    created_at: m.created_at
-                })).filter(m => m.conversation_id); // Safety check
+                const finalMsgBatch = msgBatch.map(m => {
+                    const cid = idMap.get(m.temp_psid);
+                    if (!cid) return null;
+                    return {
+                        conversation_id: cid,
+                        content: m.content,
+                        meta_message_id: m.meta_message_id,
+                        sender_type: m.sender_type,
+                        created_at: m.created_at
+                    };
+                }).filter(Boolean); // Remove nulls
 
                 // 3. Bulk Upsert Messages
                 if (finalMsgBatch.length > 0) {
@@ -321,7 +310,7 @@ export default function Home() {
             }
         }
 
-        await fetchConversations(); // Update UI
+        await fetchConversations(); 
         
         nextUrl = fbData.paging?.next;
         pagesProcessed++;
@@ -339,7 +328,7 @@ export default function Home() {
 
   return (
     <main className="flex h-screen w-screen bg-background overflow-hidden">
-      <div className={`${selectedId ? 'hidden md:flex' : 'flex'} w-full md:w-auto h-full flex-col border-r border-border`}>
+      <div className={`${selectedId ? 'hidden md:flex' : 'flex'} w-full md:w-80 shrink-0 h-full flex-col border-r border-border`}>
         <Sidebar 
           conversations={filteredConversations}
           selectedId={selectedId}
@@ -351,7 +340,7 @@ export default function Home() {
         />
       </div>
       
-      <div className={`${!selectedId ? 'hidden md:flex' : 'flex'} flex-1 h-full`}>
+      <div className={`${!selectedId ? 'hidden md:flex' : 'flex'} flex-1 h-full min-w-0`}>
         <ChatWindow 
           conversation={activeConversation}
           messages={messages}
