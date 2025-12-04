@@ -104,22 +104,22 @@ export default function Home() {
     loadMessages();
   }, [selectedId, supabase]);
 
-  // 4. Filter Logic (Note: Detailed logic is handled inside Sidebar component too)
+  // 4. Filter Logic
   const filteredConversations = useMemo(() => {
     return conversations.filter(c => {
       if (filter === 'All') return true;
-      // Note: We rely on Sidebar.tsx to do the math for "Needs Follow-up"
-      // But we pass the raw filter state down so Sidebar controls the view
+      // We pass the raw filter to Sidebar, where complex logic (like 17h calculation) happens
       return true; 
     });
   }, [conversations, filter]);
 
   const activeConversation = conversations.find(c => c.id === selectedId) || null;
 
-  // 5. Send Message Logic (With Meta API)
+  // 5. Send Message Logic (With Meta Relay)
   const handleSendMessage = async (text: string) => {
     if (!selectedId || !activeConversation) return;
     
+    // A. Optimistic UI
     const tempId = crypto.randomUUID();
     const newMsg: Message = {
       id: tempId,
@@ -163,6 +163,7 @@ export default function Home() {
             throw new Error(fbData.error.message || "Failed to send to Facebook");
         }
 
+        // D. Save to DB
         await Promise.all([
             supabase.from('messages').insert({
                 conversation_id: selectedId,
@@ -318,9 +319,9 @@ export default function Home() {
   if (!isMounted) return null;
 
   return (
-    <main className="flex h-screen w-screen bg-background overflow-hidden">
-      {/* UI FIX: Added shrink-0 and fixed width to prevent collapse */}
-      <div className={`${selectedId ? 'hidden md:flex' : 'flex'} w-full md:w-80 shrink-0 h-full flex-col border-r border-border`}>
+    <main className="flex h-screen w-full bg-background overflow-hidden">
+      {/* Sidebar: Rigid width + no shrink logic fixes "Exploding Layout" */}
+      <div className={`${selectedId ? 'hidden md:flex' : 'flex'} w-full md:w-80 min-w-[20rem] shrink-0 h-full flex-col border-r border-border`}>
         <Sidebar 
           conversations={filteredConversations}
           selectedId={selectedId}
@@ -332,13 +333,14 @@ export default function Home() {
         />
       </div>
       
-      {/* UI FIX: Added min-w-0 to prevent flex item from growing infinitely */}
-      <div className={`${!selectedId ? 'hidden md:flex' : 'flex'} flex-1 h-full min-w-0`}>
+      {/* ChatWindow: Min-width-0 prevents overflowing children from breaking flexbox */}
+      <div className={`${!selectedId ? 'hidden md:flex' : 'flex'} flex-1 h-full min-w-0 max-w-full`}>
         <ChatWindow 
           conversation={activeConversation}
           messages={messages}
           onSendMessage={handleSendMessage}
           loading={loadingMessages}
+          onBack={() => setSelectedId(null)} // <-- NAVIGATION FIX
         />
       </div>
     </main>

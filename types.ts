@@ -6,7 +6,7 @@ export interface Conversation {
   last_interaction_at: string;
   unread_count: number;
   last_message_preview?: string;
-  last_message_by?: 'user' | 'page'; // <--- THIS is the missing key fixing the build
+  last_message_by?: 'user' | 'page';
 }
 
 export interface Message {
@@ -20,7 +20,6 @@ export interface Message {
 
 export type FilterType = 'All' | 'Active' | 'Needs Follow-up';
 
-// Props types
 export interface SidebarProps {
   conversations: Conversation[];
   selectedId: string | null;
@@ -36,4 +35,5 @@ export interface ChatWindowProps {
   messages: Message[];
   onSendMessage: (text: string) => void;
   loading: boolean;
+  onBack: () => void; // <--- ADDED THIS
 }
