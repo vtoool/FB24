@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
@@ -6,8 +5,7 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 type Theme = "dark" | "light" | "system";
 
 type ThemeProviderProps = {
-  // FIX: Make children optional to resolve the TypeScript error in app/layout.tsx.
-  children?: React.ReactNode;
+  children: React.ReactNode;
   defaultTheme?: Theme;
   storageKey?: string;
 };

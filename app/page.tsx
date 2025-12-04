@@ -1,129 +1,214 @@
 "use client";
 
-import { useEffect, useState } from 'react';
-import { createClient } from '@/utils/supabase/client';
-import Link from 'next/link';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { supabase, mockConversations, mockMessages } from '../lib/supabase';
+import { Conversation, Message, FilterType } from '../types';
+import { Sidebar } from '../components/Sidebar';
+import { ChatWindow } from '../components/ChatWindow';
 import { useRouter } from 'next/navigation';
 
-export default function Dashboard() {
-  const [conversations, setConversations] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [syncing, setSyncing] = useState(false);
+export default function Home() {
+  const [isMounted, setIsMounted] = useState(false);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [filter, setFilter] = useState<FilterType>('All');
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [isRealtime, setIsRealtime] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const router = useRouter();
-  const supabase = createClient();
 
-  // Fetch Logic
-  async function fetchConversations() {
-    setLoading(true);
-    setError('');
-    
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      router.push('/login');
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  const fetchConversations = useCallback(async () => {
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+      setConversations(mockConversations);
       return;
     }
-
-    // Simple fetch without complex sorting first to test connection
-    const { data, error: dbError } = await supabase
+    const { data, error } = await supabase
       .from('conversations')
       .select('*')
       .order('last_interaction_at', { ascending: false });
-
-    if (dbError) {
-      console.error("Dashboard Fetch Error:", dbError);
-      setError(dbError.message);
-    } else {
-      setConversations(data || []);
+    
+    if (error) {
+      console.error("Error fetching conversations:", error);
+    } else if (data) {
+      setConversations(data);
     }
-    setLoading(false);
-  }
-
-  // Initial Load
-  useEffect(() => {
-    fetchConversations();
   }, []);
 
-  // Manual Sync Trigger
-  async function handleSync() {
-    setSyncing(true);
-    try {
-      await fetch('/api/sync'); // Trigger the sync route
-      await fetchConversations(); // Re-fetch data
-    } catch (err) {
-      console.error("Sync failed", err);
+  // 1. Fetch Conversations & Setup Realtime
+  useEffect(() => {
+    fetchConversations();
+    
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
+
+    const channel = supabase
+      .channel('crm-updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, (payload) => {
+        const newRecord = payload.new as Conversation;
+        setConversations(prev => {
+           const exists = prev.find(c => c.id === newRecord.id);
+           if (payload.eventType === 'DELETE') {
+             return prev.filter(c => c.id !== payload.old.id);
+           }
+           if (exists) {
+             return prev.map(c => c.id === newRecord.id ? newRecord : c).sort((a,b) => new Date(b.last_interaction_at).getTime() - new Date(a.last_interaction_at).getTime());
+           }
+           return [newRecord, ...prev].sort((a,b) => new Date(b.last_interaction_at).getTime() - new Date(a.last_interaction_at).getTime());
+        });
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+         const newMsg = payload.new as Message;
+         if (selectedId === newMsg.conversation_id) {
+           setMessages(prev => [...prev, newMsg]);
+         }
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') setIsRealtime(true);
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedId, fetchConversations]);
+
+  // 2. Fetch Messages when Conversation Selected
+  useEffect(() => {
+    if (!selectedId) return;
+
+    const loadMessages = async () => {
+      setLoadingMessages(true);
+       if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+         setMessages(mockMessages[selectedId] || []);
+       } else {
+         const { data, error } = await supabase
+          .from('messages')
+          .select('*')
+          .eq('conversation_id', selectedId)
+          .order('created_at', { ascending: true });
+        
+        if (error) {
+          console.error("Error fetching messages:", error);
+          setMessages([]);
+        } else {
+          setMessages(data || []);
+        }
+       }
+       setLoadingMessages(false);
+    };
+    
+    loadMessages();
+  }, [selectedId]);
+
+  // 3. Filtering Logic
+  const filteredConversations = useMemo(() => {
+    return conversations.filter(c => {
+      if (filter === 'All') return true;
+      if (filter === 'Active') return c.status === 'active';
+      if (filter === 'Needs Follow-up') return c.status === 'needs_follow_up';
+      return true;
+    });
+  }, [conversations, filter]);
+
+  const activeConversation = conversations.find(c => c.id === selectedId) || null;
+
+  // 4. Send Message Handler
+  const handleSendMessage = async (text: string) => {
+    if (!selectedId) return;
+    
+    const newMsg: Message = {
+      id: crypto.randomUUID(),
+      conversation_id: selectedId,
+      content: text,
+      sender_type: 'page',
+      created_at: new Date().toISOString()
+    };
+    
+    // Optimistic UI updates
+    setMessages(prev => [...prev, newMsg]);
+    setConversations(prev => prev.map(c => 
+      c.id === selectedId 
+        ? { ...c, last_interaction_at: newMsg.created_at, status: 'active' as const, unread_count: 0 } 
+        : c
+    ).sort((a,b) => new Date(b.last_interaction_at).getTime() - new Date(a.last_interaction_at).getTime()));
+
+    // Database updates
+    if (process.env.NEXT_PUBLIC_SUPABASE_URL) {
+      await Promise.all([
+        supabase.from('messages').insert({
+          conversation_id: selectedId,
+          content: text,
+          sender_type: 'page',
+          created_at: newMsg.created_at
+        }),
+        supabase.from('conversations').update({
+          last_interaction_at: newMsg.created_at,
+          status: 'active',
+          unread_count: 0
+        }).eq('id', selectedId)
+      ]);
     }
-    setSyncing(false);
-  }
+  };
+  
+  // 5. Manual Sync Handler
+  const handleSync = async () => {
+    setIsSyncing(true);
+    try {
+      const response = await fetch('/api/sync');
+      const result = await response.json();
+      
+      if (!response.ok) {
+        if (result.code === 'MISSING_TOKEN') {
+          if (confirm('Meta Access Token is missing. Go to settings to configure it?')) {
+            router.push('/settings');
+          }
+          return;
+        }
+        throw new Error(result.error || 'Sync failed');
+      }
+      
+      await fetchConversations(); // Refresh list after sync
+    } catch (error: any) {
+      console.error(error);
+      alert(`Sync Error: ${error.message}`);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  if (!isMounted) return null;
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      {/* Header */}
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Inbox</h1>
-          <p className="text-gray-500 dark:text-gray-400">Manage your Messenger leads</p>
-        </div>
-        <div className="flex gap-3">
-          <Link href="/settings" className="px-4 py-2 border rounded hover:bg-gray-50 dark:hover:bg-gray-800 dark:border-gray-700">
-            Settings
-          </Link>
-          <button 
-            onClick={handleSync}
-            disabled={syncing}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-          >
-            {syncing ? 'Syncing...' : 'Sync Messages'}
-          </button>
-        </div>
+    <main className="flex h-screen w-screen bg-background overflow-hidden">
+      <div className={`${selectedId ? 'hidden md:flex' : 'flex'} w-full md:w-auto h-full flex-col border-r border-border`}>
+        <Sidebar 
+          conversations={filteredConversations}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          filter={filter}
+          setFilter={setFilter}
+          isSyncing={isSyncing}
+          onSync={handleSync}
+        />
+      </div>
+      
+      <div className={`${!selectedId ? 'hidden md:flex' : 'flex'} flex-1 h-full`}>
+        <ChatWindow 
+          conversation={activeConversation}
+          messages={messages}
+          onSendMessage={handleSendMessage}
+          loading={loadingMessages}
+        />
       </div>
 
-      {/* Error State */}
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded mb-6">
-          <strong>Database Error:</strong> {error}
-          <p className="text-sm mt-1">Try reloading the "Schema Cache" in your Supabase Dashboard Settings.</p>
+      <div className="fixed bottom-4 left-4 z-50">
+        <div className="bg-foreground/90 text-background text-[10px] px-2 py-1 rounded backdrop-blur-sm">
+           Polling Architecture • Realtime: {isRealtime ? 'Active' : 'Mock'}
         </div>
-      )}
-
-      {/* Loading State */}
-      {loading && <div className="text-center py-10 text-gray-500">Loading conversations...</div>}
-
-      {/* Empty State */}
-      {!loading && !error && conversations.length === 0 && (
-        <div className="text-center py-12 border-2 border-dashed rounded-lg">
-          <p className="text-gray-500 mb-4">No conversations found.</p>
-          <button onClick={handleSync} className="text-blue-600 hover:underline">
-            Run your first Sync
-          </button>
-        </div>
-      )}
-
-      {/* List View */}
-      <div className="space-y-3">
-        {conversations.map((convo) => (
-          <div key={convo.id} className="p-4 bg-white dark:bg-gray-900 border dark:border-gray-800 rounded-lg shadow-sm hover:shadow-md transition flex justify-between items-center group cursor-pointer">
-            <div>
-              <h3 className="font-semibold text-lg text-gray-800 dark:text-gray-200">
-                {convo.customer_name || `User ${convo.psid.slice(0, 6)}`}
-              </h3>
-              <p className="text-sm text-gray-500">
-                Last updated: {new Date(convo.last_interaction_at).toLocaleString()}
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className={`px-2 py-1 rounded text-xs font-medium ${
-                convo.status === 'needs_follow_up' 
-                  ? 'bg-yellow-100 text-yellow-800' 
-                  : 'bg-green-100 text-green-800'
-              }`}>
-                {convo.status?.replace('_', ' ')}
-              </span>
-              <span className="text-gray-400 group-hover:text-blue-600">&rarr;</span>
-            </div>
-          </div>
-        ))}
       </div>
-    </div>
+    </main>
   );
 }

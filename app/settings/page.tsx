@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect } from "react";
@@ -50,7 +49,7 @@ export default function SettingsPage() {
       {
         user_id: user.id,
         meta_page_access_token: token,
-        // FIX: Removed 'updated_at' field as it does not exist in the settings table schema.
+        updated_at: new Date().toISOString(),
       },
       { onConflict: "user_id" }
     );
