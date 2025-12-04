@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     // 2. Get Settings
     const { data: settings } = await supabase
         .from('settings')
-        .select('meta_page_access_token')
+        .select('meta_page_access_token, meta_page_id')
         .eq('user_id', user.id)
         .maybeSingle();
 
@@ -25,41 +25,44 @@ export async function GET(request: Request) {
     const token = settings.meta_page_access_token;
 
     // 3. PAGINATION SETUP
-    const MAX_PAGES = 6; // User requested ~300 conversations
+    const MAX_PAGES = 5; // Reduced slightly to avoid Vercel Timeouts
     let pageCount = 0;
     let totalSynced = 0;
     
-    // Initial URL (Requesting 50 items per page)
+    // Requesting 50 items per page
     let nextUrl = `https://graph.facebook.com/v19.0/me/conversations?fields=participants,updated_time,messages{message,created_time,from,id}&limit=50&access_token=${token}`;
 
-    // 4. THE LOOP
     while (nextUrl && pageCount < MAX_PAGES) {
-        console.log(`Fetching Page ${pageCount + 1}...`);
-        
         const fbResponse = await fetch(nextUrl);
         const fbData = await fbResponse.json();
 
-        if (fbData.error) {
-            console.error("Meta API Error:", fbData.error);
-            // If one page fails, we stop but don't crash the whole process
-            break; 
-        }
+        if (fbData.error) break;
 
         const conversations = fbData.data || [];
         
-        // Process this batch
+        // Batch Processing
         for (const convo of conversations) {
             const psid = convo.participants?.data[0]?.id;
             if (!psid) continue;
 
-            // Name Detection Logic
-            let customerName = convo.participants?.data[0]?.name || "Unknown User";
-            const messages = convo.messages?.data || [];
+            // Name & Last Sender Detection
+            let customerName = convo.participants?.data[0]?.name || "Unknown";
+            let lastMessageBy = 'user'; // Default
             
-            // Try to find a real name from the message history
-            const lastUserMessage = messages.find((m: any) => m.from?.id === psid);
-            if (lastUserMessage && lastUserMessage.from?.name) {
-                customerName = lastUserMessage.from.name;
+            const messages = convo.messages?.data || [];
+            if (messages.length > 0) {
+                // The first message in the array is usually the newest one
+                const newestMsg = messages[0];
+                
+                // If the newest message sender ID matches the customer PSID, it's the user.
+                // Otherwise, it's the Page (Agent).
+                if (newestMsg.from?.id === psid) {
+                    lastMessageBy = 'user';
+                    // Also grab the name if available
+                    if (newestMsg.from?.name) customerName = newestMsg.from.name;
+                } else {
+                    lastMessageBy = 'page';
+                }
             }
 
             // Upsert Conversation
@@ -68,8 +71,9 @@ export async function GET(request: Request) {
                 .upsert({
                     psid: psid,
                     customer_name: customerName,
-                    status: 'active', // Default status
+                    status: 'active', 
                     last_interaction_at: convo.updated_time,
+                    last_message_by: lastMessageBy, // <--- NEW COLUMN
                     unread_count: 0
                 } as any, { onConflict: 'psid' })
                 .select()
@@ -77,9 +81,11 @@ export async function GET(request: Request) {
 
             if (convoError) continue;
 
-            // Upsert Messages
+            // Upsert Messages (Only newest 5 to save time/performance)
+            // We don't need all 50 history messages for every sync
             if (savedConvo && messages.length > 0) {
-                const messageRows = messages.map((msg: any) => ({
+                const recentMessages = messages.slice(0, 5); 
+                const messageRows = recentMessages.map((msg: any) => ({
                     conversation_id: savedConvo.id,
                     content: msg.message || '[Attachment]',
                     meta_message_id: msg.id,
@@ -92,19 +98,14 @@ export async function GET(request: Request) {
             totalSynced++;
         }
 
-        // Prepare for next loop
-        nextUrl = fbData.paging?.next; // Meta provides the full URL for the next page
+        nextUrl = fbData.paging?.next;
         pageCount++;
     }
 
-    return NextResponse.json({ 
-        success: true, 
-        pages_processed: pageCount,
-        total_conversations_synced: totalSynced 
-    });
+    return NextResponse.json({ success: true, total: totalSynced });
 
   } catch (error: any) {
-    console.error('Sync Job Error:', error);
+    console.error('Sync Error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
