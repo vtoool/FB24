@@ -34,11 +34,10 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversation, messages, 
   const displayName = conversation.customer_name || `User ${conversation.psid}`;
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-background">
+    <div className="flex-1 flex flex-col h-full bg-background min-w-0"> {/* Added min-w-0 to container */}
       {/* Header */}
-      <div className="bg-card border-b border-border px-4 py-3 md:px-6 md:py-4 flex justify-between items-center shadow-sm z-10">
+      <div className="bg-card border-b border-border px-4 py-3 md:px-6 md:py-4 flex justify-between items-center shadow-sm z-10 shrink-0">
         <div className="flex items-center gap-3">
-          {/* BACK BUTTON: Visible only on mobile (md:hidden) */}
           <button 
             onClick={onBack} 
             className="md:hidden text-muted-foreground hover:text-foreground p-1 -ml-2"
@@ -46,17 +45,17 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversation, messages, 
             <ArrowLeft className="w-6 h-6" />
           </button>
 
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white font-medium text-lg ring-2 ring-background">
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white font-medium text-lg ring-2 ring-background shrink-0">
             {displayName.charAt(0)}
           </div>
-          <div>
-            <h2 className="font-bold text-foreground text-sm md:text-base">{displayName}</h2>
+          <div className="min-w-0">
+            <h2 className="font-bold text-foreground text-sm md:text-base truncate">{displayName}</h2>
             {conversation.status === 'needs_follow_up' && (
                <p className="text-[10px] md:text-xs text-orange-500 font-medium">Needs Reply</p>
             )}
           </div>
         </div>
-        <div className="flex items-center gap-4 text-muted-foreground">
+        <div className="flex items-center gap-4 text-muted-foreground shrink-0">
           <button className="hover:text-foreground transition-colors" title="More Options">
             <MoreVertical className="w-5 h-5" />
           </button>
@@ -76,13 +75,15 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversation, messages, 
               <div key={msg.id} className={cn("flex", isMe ? "justify-end" : "justify-start")}>
                 <div className={cn(
                   "max-w-[85%] md:max-w-[70%] px-4 py-2 md:px-5 md:py-3 rounded-2xl text-sm shadow-sm leading-relaxed",
+                  // FIX: break-words prevents long URLs from exploding the layout
+                  "break-words whitespace-pre-wrap", 
                   isMe 
                     ? "bg-primary text-primary-foreground rounded-br-none" 
                     : "bg-card text-card-foreground border border-border rounded-bl-none"
                 )}>
                   {msg.content}
                   <div className={cn(
-                    "text-[10px] mt-1 text-right opacity-70",
+                    "text-[10px] mt-1 text-right opacity-70 select-none",
                     isMe ? "text-primary-foreground" : "text-muted-foreground"
                   )}>
                     {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -96,19 +97,19 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversation, messages, 
       </div>
 
       {/* Input */}
-      <div className="p-4 bg-card border-t border-border">
+      <div className="p-4 bg-card border-t border-border shrink-0">
         <form onSubmit={handleSubmit} className="flex items-center gap-3 max-w-4xl mx-auto">
           <input
             type="text"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             placeholder="Type a message..."
-            className="flex-1 bg-muted/50 text-foreground placeholder:text-muted-foreground border border-input rounded-full px-4 py-2 md:px-5 md:py-3 focus:outline-none focus:ring-2 focus:ring-ring focus:border-input transition-all"
+            className="flex-1 bg-muted/50 text-foreground placeholder:text-muted-foreground border border-input rounded-full px-4 py-2 md:px-5 md:py-3 focus:outline-none focus:ring-2 focus:ring-ring focus:border-input transition-all min-w-0"
           />
           <button 
             type="submit"
             disabled={!inputText.trim()}
-            className="p-3 bg-primary text-primary-foreground rounded-full hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+            className="p-3 bg-primary text-primary-foreground rounded-full hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm shrink-0"
           >
             <Send className="w-5 h-5" />
           </button>
