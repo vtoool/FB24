@@ -151,10 +151,10 @@ export default function Home() {
     ]);
   };
   
-  // 6. CLIENT-SIDE SYNC ENGINE (Direct Browser Fetch)
+// 6. HIGH-PERFORMANCE BATCH SYNC
   const handleSync = async () => {
     setIsSyncing(true);
-    const MAX_PAGES = 6; // Fetch ~300 conversations
+    const MAX_PAGES = 6; // Limit to ~300 conversations
     let pagesProcessed = 0;
     
     try {
@@ -178,11 +178,9 @@ export default function Home() {
       const token = settings.meta_page_access_token;
       let nextUrl = `https://graph.facebook.com/v19.0/me/conversations?fields=participants,updated_time,messages{message,created_time,from,id}&limit=50&access_token=${token}`;
 
-      // B. The Loop
       while (nextUrl && pagesProcessed < MAX_PAGES) {
-        console.log(`Syncing Page ${pagesProcessed + 1}...`);
+        console.log(`Fetching Page ${pagesProcessed + 1}...`);
         
-        // Direct fetch to Facebook (No Vercel Timeout)
         const fbRes = await fetch(nextUrl);
         const fbData = await fbRes.json();
         
@@ -190,11 +188,15 @@ export default function Home() {
 
         const conversationsData = fbData.data || [];
         
-        // Process Locally
+        // --- BATCH PREPARATION ---
+        const convoBatch: any[] = [];
+        const msgBatch: any[] = [];
+
         for (const convo of conversationsData) {
            const psid = convo.participants?.data[0]?.id;
            if (!psid) continue;
 
+           // Calculate Metadata Locally
            let customerName = convo.participants?.data[0]?.name || "Unknown";
            let lastMessageBy = 'user';
            let lastMessagePreview = '';
@@ -212,10 +214,8 @@ export default function Home() {
              }
            }
 
-           // Upsert Conversation
-           const { data: savedConvo } = await supabase
-             .from('conversations')
-             .upsert({
+           // Add to Conversation Batch
+           convoBatch.push({
                 psid: psid,
                 customer_name: customerName,
                 status: 'active',
@@ -223,26 +223,64 @@ export default function Home() {
                 last_message_by: lastMessageBy,
                 last_message_preview: lastMessagePreview,
                 unread_count: 0
-             } as any, { onConflict: 'psid' })
-             .select()
-             .single();
-            
-           // Upsert Messages (Batch newest 5)
-           if (savedConvo && msgs.length > 0) {
+           });
+
+           // Add to Message Batch (Limit 5 newest per convo to keep payload light)
+           if (msgs.length > 0) {
              const recent = msgs.slice(0, 5).map((m: any) => ({
-                conversation_id: savedConvo.id,
+                // We need to fetch the conversation ID later, but for bulk insert
+                // we can rely on Supabase upserting the conversation first.
+                // However, without the UUID, we need a strategy.
+                // STRATEGY: We insert conversations, then fetch their IDs map, then insert messages.
+                // For simplicity/speed in client-side sync, we might have to query specific IDs if we don't have them.
+                // optimization: upsert returns data.
+                
+                // TEMP FIX: To do true bulk insert of messages, we need the conversation UUIDs.
+                // Since 'psid' is unique, we can rely on that if we had a join, but we don't.
+                // So we will do 1 Bulk Request for Conversations, get the IDs back, then 1 Bulk for Messages.
+                temp_psid: psid, // Helper to link back
                 content: m.message || '[Attachment]',
                 meta_message_id: m.id,
                 sender_type: m.from?.id === psid ? 'user' : 'page',
                 created_at: m.created_time
              }));
-             
-             await supabase.from('messages').upsert(recent as any, { onConflict: 'meta_message_id' });
+             msgBatch.push(...recent);
            }
         }
 
-        // Refresh UI immediately
-        await fetchConversations();
+        // --- BULK EXECUTION ---
+        if (convoBatch.length > 0) {
+            // 1. Bulk Upsert Conversations & Return IDs
+            const { data: savedConvos, error: convoError } = await supabase
+                .from('conversations')
+                .upsert(convoBatch, { onConflict: 'psid' })
+                .select('id, psid'); // Get the UUIDs back
+
+            if (convoError) {
+                console.error("Batch Convo Error", convoError);
+                continue;
+            }
+
+            // 2. Map Message Batch to correct Conversation UUIDs
+            if (savedConvos && msgBatch.length > 0) {
+                const idMap = new Map(savedConvos.map(c => [c.psid, c.id]));
+                
+                const finalMsgBatch = msgBatch.map(m => ({
+                    conversation_id: idMap.get(m.temp_psid), // Link using the map
+                    content: m.content,
+                    meta_message_id: m.meta_message_id,
+                    sender_type: m.sender_type,
+                    created_at: m.created_at
+                })).filter(m => m.conversation_id); // Safety check
+
+                // 3. Bulk Upsert Messages
+                if (finalMsgBatch.length > 0) {
+                    await supabase.from('messages').upsert(finalMsgBatch, { onConflict: 'meta_message_id' });
+                }
+            }
+        }
+
+        await fetchConversations(); // Update UI
         
         nextUrl = fbData.paging?.next;
         pagesProcessed++;
