@@ -115,40 +115,81 @@ export default function Home() {
 
   const activeConversation = conversations.find(c => c.id === selectedId) || null;
 
-  // 5. Send Message Logic
+// 5. Send Message Handler (Now with Meta API integration)
   const handleSendMessage = async (text: string) => {
-    if (!selectedId) return;
+    if (!selectedId || !activeConversation) return;
     
+    // A. Optimistic UI Update (Instant feedback)
+    const tempId = crypto.randomUUID();
     const newMsg: Message = {
-      id: crypto.randomUUID(),
+      id: tempId,
       conversation_id: selectedId,
       content: text,
       sender_type: 'page',
       created_at: new Date().toISOString()
     };
     
-    // Optimistic Update
     setMessages(prev => [...prev, newMsg]);
-    setConversations(prev => prev.map(c => 
-      c.id === selectedId 
-        ? { ...c, last_interaction_at: newMsg.created_at, status: 'active' as const, unread_count: 0, last_message_preview: text } 
-        : c
-    ).sort((a,b) => new Date(b.last_interaction_at).getTime() - new Date(a.last_interaction_at).getTime()));
+    
+    try {
+        // B. Get the Access Token (Required to send)
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error("User not authenticated");
 
-    // DB Update
-    await Promise.all([
-        supabase.from('messages').insert({
-            conversation_id: selectedId,
-            content: text,
-            sender_type: 'page',
-            created_at: newMsg.created_at
-        }),
-        supabase.from('conversations').update({
-            last_interaction_at: newMsg.created_at,
-            status: 'active',
-            unread_count: 0
-        }).eq('id', selectedId)
-    ]);
+        const { data: settings } = await supabase
+            .from('settings')
+            .select('meta_page_access_token')
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+        if (!settings?.meta_page_access_token) {
+            throw new Error("No Page Access Token found in Settings");
+        }
+
+        // C. CALL META API (The missing link!)
+        const psid = activeConversation.psid;
+        const fbRes = await fetch(`https://graph.facebook.com/v19.0/me/messages?access_token=${settings.meta_page_access_token}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                recipient: { id: psid },
+                messaging_type: "RESPONSE",
+                message: { text: text }
+            })
+        });
+
+        const fbData = await fbRes.json();
+        
+        if (fbData.error) {
+            console.error("Meta API Error:", fbData.error);
+            throw new Error(fbData.error.message || "Failed to send to Facebook");
+        }
+
+        // D. Save to Supabase (Only if Meta succeeded)
+        // We use the real message ID from Facebook (fbData.message_id)
+        await Promise.all([
+            supabase.from('messages').insert({
+                conversation_id: selectedId,
+                content: text,
+                sender_type: 'page',
+                created_at: new Date().toISOString(),
+                meta_message_id: fbData.message_id 
+            }),
+            supabase.from('conversations').update({
+                last_interaction_at: new Date().toISOString(),
+                status: 'active', // Reset status because we replied
+                unread_count: 0,
+                last_message_preview: text,
+                last_message_by: 'page'
+            }).eq('id', selectedId)
+        ]);
+
+    } catch (error: any) {
+        console.error("Send Error:", error);
+        alert(`Could not send message: ${error.message}`);
+        // Optional: Remove the optimistic message here if you want perfect data consistency
+        setMessages(prev => prev.filter(m => m.id !== tempId));
+    }
   };
   
 // 6. HIGH-PERFORMANCE BATCH SYNC
