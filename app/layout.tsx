@@ -1,5 +1,6 @@
 import React from 'react';
 import './globals.css';
+import { ThemeProvider } from '../components/theme-provider';
 
 export const metadata = {
   title: 'Messenger CRM AI',
@@ -12,9 +13,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className="bg-gray-50 text-gray-900 font-sans antialiased overflow-hidden">
-        {children}
+    <html lang="en" suppressHydrationWarning>
+      <body className="bg-background text-foreground font-sans antialiased overflow-hidden">
+        <ThemeProvider defaultTheme="system" storageKey="crm-theme">
+            {children}
+        </ThemeProvider>
       </body>
     </html>
   );

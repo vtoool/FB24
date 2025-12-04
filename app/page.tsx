@@ -182,8 +182,8 @@ export default function Home() {
   if (!isMounted) return null;
 
   return (
-    <main className="flex h-screen w-screen bg-gray-50 overflow-hidden">
-      <div className={`${selectedId ? 'hidden md:flex' : 'flex'} w-full md:w-auto h-full flex-col`}>
+    <main className="flex h-screen w-screen bg-background overflow-hidden">
+      <div className={`${selectedId ? 'hidden md:flex' : 'flex'} w-full md:w-auto h-full flex-col border-r border-border`}>
         <Sidebar 
           conversations={filteredConversations}
           selectedId={selectedId}
@@ -205,7 +205,7 @@ export default function Home() {
       </div>
 
       <div className="fixed bottom-4 left-4 z-50">
-        <div className="bg-black/80 text-white text-[10px] px-2 py-1 rounded backdrop-blur-sm">
+        <div className="bg-foreground/90 text-background text-[10px] px-2 py-1 rounded backdrop-blur-sm">
            Polling Architecture • Realtime: {isRealtime ? 'Active' : 'Mock'}
         </div>
       </div>

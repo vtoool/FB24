@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 import { ChatWindowProps } from '../types';
 import { Send, MoreVertical, Phone, Video, Loader2, Bot } from 'lucide-react';
@@ -25,8 +24,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversation, messages, 
 
   if (!conversation) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 text-gray-400">
-        <Bot className="w-16 h-16 mb-4 text-gray-300" />
+      <div className="flex-1 flex flex-col items-center justify-center bg-background text-muted-foreground">
+        <Bot className="w-16 h-16 mb-4 text-muted-foreground/50" />
         <p>Select a conversation to start chatting</p>
       </div>
     );
@@ -35,16 +34,16 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversation, messages, 
   const displayName = conversation.customer_name || `User ${conversation.psid}`;
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-gray-50/50">
+    <div className="flex-1 flex flex-col h-full bg-background">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center shadow-sm">
+      <div className="bg-card border-b border-border px-6 py-4 flex justify-between items-center shadow-sm z-10">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white font-medium text-lg">
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white font-medium text-lg ring-2 ring-background">
             {displayName.charAt(0)}
           </div>
           <div>
-            <h2 className="font-bold text-gray-900">{displayName}</h2>
-            <div className="flex items-center gap-2 text-xs text-gray-500">
+            <h2 className="font-bold text-foreground">{displayName}</h2>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <span className={cn(
                 "w-2 h-2 rounded-full",
                 conversation.status === 'active' ? "bg-green-500" : "bg-gray-400"
@@ -53,18 +52,18 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversation, messages, 
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-4 text-gray-400">
-          <button className="hover:text-gray-600 transition-colors"><Phone className="w-5 h-5" /></button>
-          <button className="hover:text-gray-600 transition-colors"><Video className="w-5 h-5" /></button>
-          <button className="hover:text-gray-600 transition-colors"><MoreVertical className="w-5 h-5" /></button>
+        <div className="flex items-center gap-4 text-muted-foreground">
+          <button className="hover:text-foreground transition-colors"><Phone className="w-5 h-5" /></button>
+          <button className="hover:text-foreground transition-colors"><Video className="w-5 h-5" /></button>
+          <button className="hover:text-foreground transition-colors"><MoreVertical className="w-5 h-5" /></button>
         </div>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+      <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-secondary/30">
         {loading ? (
           <div className="flex justify-center p-4">
-            <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
           </div>
         ) : (
           messages.map((msg) => {
@@ -74,13 +73,13 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversation, messages, 
                 <div className={cn(
                   "max-w-[70%] px-5 py-3 rounded-2xl text-sm shadow-sm leading-relaxed",
                   isMe 
-                    ? "bg-blue-600 text-white rounded-br-none" 
-                    : "bg-white text-gray-800 border border-gray-100 rounded-bl-none"
+                    ? "bg-primary text-primary-foreground rounded-br-none" 
+                    : "bg-card text-card-foreground border border-border rounded-bl-none"
                 )}>
                   {msg.content}
                   <div className={cn(
                     "text-[10px] mt-1 text-right opacity-70",
-                    isMe ? "text-blue-100" : "text-gray-400"
+                    isMe ? "text-primary-foreground" : "text-muted-foreground"
                   )}>
                     {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </div>
@@ -93,19 +92,19 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ conversation, messages, 
       </div>
 
       {/* Input */}
-      <div className="p-4 bg-white border-t border-gray-200">
+      <div className="p-4 bg-card border-t border-border">
         <form onSubmit={handleSubmit} className="flex items-center gap-3 max-w-4xl mx-auto">
           <input
             type="text"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             placeholder="Type your message..."
-            className="flex-1 bg-gray-50 text-gray-900 placeholder-gray-400 border border-gray-200 rounded-full px-5 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+            className="flex-1 bg-muted/50 text-foreground placeholder:text-muted-foreground border border-input rounded-full px-5 py-3 focus:outline-none focus:ring-2 focus:ring-ring focus:border-input transition-all"
           />
           <button 
             type="submit"
             disabled={!inputText.trim()}
-            className="p-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+            className="p-3 bg-primary text-primary-foreground rounded-full hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
           >
             <Send className="w-5 h-5" />
           </button>

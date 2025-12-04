@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default function SettingsPage() {
   const [token, setToken] = useState("");
@@ -62,33 +63,36 @@ export default function SettingsPage() {
     setSaving(false);
   };
 
-  if (loading) return <div className="p-10 text-center">Loading settings...</div>;
+  if (loading) return <div className="p-10 text-center text-foreground">Loading settings...</div>;
 
   return (
-    <div className="max-w-2xl mx-auto p-6">
+    <div className="max-w-2xl mx-auto p-6 min-h-screen">
       {/* Navigation Header */}
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">CRM Settings</h1>
-        <Link href="/" className="text-blue-600 hover:underline">
-          &larr; Back to Dashboard
-        </Link>
+        <h1 className="text-2xl font-bold text-foreground">CRM Settings</h1>
+        <div className="flex items-center gap-4">
+             <ThemeToggle />
+            <Link href="/" className="text-primary hover:underline">
+            &larr; Back to Dashboard
+            </Link>
+        </div>
       </div>
       
-      <div className="bg-white p-6 rounded-lg shadow border">
-        <h2 className="text-lg font-semibold mb-4">Meta Graph API Configuration</h2>
-        <p className="text-sm text-gray-600 mb-4">
+      <div className="bg-card p-6 rounded-lg shadow border border-border">
+        <h2 className="text-lg font-semibold mb-4 text-foreground">Meta Graph API Configuration</h2>
+        <p className="text-sm text-muted-foreground mb-4">
             Paste your Page Access Token below.
         </p>
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Page Access Token</label>
+            <label className="block text-sm font-medium mb-1 text-foreground">Page Access Token</label>
             <input 
               type="text" 
               value={token}
               onChange={(e) => setToken(e.target.value)}
               placeholder="EAA..."
-              className="w-full p-2 border rounded font-mono text-sm"
+              className="w-full p-2 border border-input bg-background rounded font-mono text-sm text-foreground focus:ring-2 focus:ring-ring focus:outline-none"
             />
           </div>
 
@@ -96,12 +100,12 @@ export default function SettingsPage() {
             <button 
               onClick={handleSave}
               disabled={saving}
-              className={`px-4 py-2 rounded text-white ${saving ? "bg-gray-400" : "bg-blue-600 hover:bg-blue-700"}`}
+              className={`px-4 py-2 rounded text-primary-foreground ${saving ? "bg-muted cursor-not-allowed" : "bg-primary hover:bg-primary/90"}`}
             >
               {saving ? "Saving..." : "Save Configuration"}
             </button>
             
-            {msg && <span className={`text-sm ${msg.includes("Error") ? "text-red-600" : "text-green-600"}`}>{msg}</span>}
+            {msg && <span className={`text-sm ${msg.includes("Error") ? "text-destructive" : "text-green-600"}`}>{msg}</span>}
           </div>
         </div>
       </div>
