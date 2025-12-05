@@ -18,7 +18,7 @@ export interface Message {
   meta_message_id?: string | null;
 }
 
-export type FilterType = 'All' | 'Active' | 'Needs Follow-up';
+export type FilterType = 'All' | 'Active' | 'Needs Follow-up' | 'Needs Reply';
 
 export interface SidebarProps {
   conversations: Conversation[];

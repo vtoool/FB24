@@ -54,7 +54,9 @@ export async function POST(request: Request) {
                 psid: senderPsid,
                 status: 'active',
                 last_interaction_at: new Date().toISOString(),
-                unread_count: 1
+                unread_count: 1,
+                last_message_by: 'user', // <--- IMPORTANT: Mark as user message for "Needs Reply" filter
+                last_message_preview: messageText || '[Attachment/Non-text]'
               } as any, { onConflict: 'psid' })
               .select()
               .single();

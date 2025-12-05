@@ -75,9 +75,12 @@ export async function GET(request: Request) {
         });
 
         // 5. Update (No type error possible now)
+        // Mark as answered by page so it leaves "Needs Reply" filter
         await supabase.from('conversations').update({
           last_interaction_at: new Date().toISOString(),
-          status: 'active'
+          status: 'active',
+          last_message_by: 'page',
+          last_message_preview: aiResponse
         }).eq('id', lead.id);
 
         processedLeads.push({ id: lead.id, response: aiResponse });

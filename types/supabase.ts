@@ -18,6 +18,8 @@ export interface Database {
           status: 'active' | 'archived' | 'needs_follow_up'
           last_interaction_at: string
           unread_count: number
+          last_message_by: 'user' | 'page' | null
+          last_message_preview: string | null
         }
         Insert: {
           id?: string
@@ -26,6 +28,8 @@ export interface Database {
           status?: 'active' | 'archived' | 'needs_follow_up'
           last_interaction_at?: string
           unread_count?: number
+          last_message_by?: 'user' | 'page' | null
+          last_message_preview?: string | null
         }
         Update: {
           id?: string
@@ -34,6 +38,8 @@ export interface Database {
           status?: 'active' | 'archived' | 'needs_follow_up'
           last_interaction_at?: string
           unread_count?: number
+          last_message_by?: 'user' | 'page' | null
+          last_message_preview?: string | null
         }
       }
       messages: {

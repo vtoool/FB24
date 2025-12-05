@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 
 export async function GET(request: Request) {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   // 1. Check Auth
   const { data: { user } } = await supabase.auth.getUser();
@@ -12,11 +12,13 @@ export async function GET(request: Request) {
 
   try {
     // 2. Get Settings
-    const { data: settings } = await supabase
+    const { data: settingsData } = await supabase
         .from('settings')
         .select('meta_page_access_token, meta_page_id')
         .eq('user_id', user.id)
         .maybeSingle();
+
+    const settings = settingsData as any;
 
     if (!settings?.meta_page_access_token) {
         return NextResponse.json({ error: 'No Token in Settings' }, { status: 400 });
@@ -66,7 +68,7 @@ export async function GET(request: Request) {
             }
 
             // Upsert Conversation
-            const { data: savedConvo, error: convoError } = await supabase
+            const { data: savedConvoData, error: convoError } = await supabase
                 .from('conversations')
                 .upsert({
                     psid: psid,
@@ -78,6 +80,8 @@ export async function GET(request: Request) {
                 } as any, { onConflict: 'psid' })
                 .select()
                 .single();
+
+            const savedConvo = savedConvoData as any;
 
             if (convoError) continue;
 

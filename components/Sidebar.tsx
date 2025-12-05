@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { SidebarProps, FilterType } from '../types';
-import { Search, MessageCircle, RefreshCw, Settings, AlertCircle } from 'lucide-react';
+import { Search, MessageCircle, RefreshCw, Settings, AlertCircle, MessageSquare } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import Link from 'next/link';
@@ -21,7 +21,7 @@ function getRelativeTime(dateString: string) {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ conversations, selectedId, onSelect, filter, setFilter, isSyncing, onSync }) => {
-  const filters: FilterType[] = ['All', 'Needs Follow-up'];
+  const filters: FilterType[] = ['All', 'Needs Reply', 'Needs Follow-up'];
   const [searchQuery, setSearchQuery] = useState("");
 
   const processedConversations = useMemo(() => {
@@ -40,6 +40,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ conversations, selectedId, onS
 
         return isPageLast && hoursDiff > 17;
       });
+    }
+
+    // --- NEW LOGIC: Needs Reply ---
+    if (filter === 'Needs Reply') {
+      result = result.filter(c => c.last_message_by === 'user');
     }
 
     // Search Filter
@@ -129,6 +134,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ conversations, selectedId, onS
             // Dynamic check for badge display (same logic as filter)
             const isFollowUp = conv.last_message_by === 'page' && 
                 ((new Date().getTime() - new Date(conv.last_interaction_at).getTime()) / 36e5) > 17;
+            
+            const isNeedsReply = conv.last_message_by === 'user';
 
             return (
               <button
@@ -147,6 +154,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ conversations, selectedId, onS
                     <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-orange-500 border-2 border-background rounded-full flex items-center justify-center">
                       <AlertCircle className="w-2 h-2 text-white" />
                     </div>
+                  )}
+                  {isNeedsReply && (
+                     <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-blue-500 border-2 border-background rounded-full flex items-center justify-center">
+                       <MessageSquare className="w-2 h-2 text-white" />
+                     </div>
                   )}
                 </div>
                 

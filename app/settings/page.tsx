@@ -23,11 +23,13 @@ export default function SettingsPage() {
       }
 
       // Fetch existing token using .maybeSingle() to avoid 406 errors
-      const { data, error } = await supabase
+      const { data: settingsData, error } = await supabase
         .from("settings")
         .select("meta_page_access_token")
         .eq("user_id", user.id)
         .maybeSingle();
+
+      const data = settingsData as any;
 
       if (data) {
         setToken(data.meta_page_access_token || "");
@@ -44,13 +46,13 @@ export default function SettingsPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    // Strict Upsert logic
+    // Strict Upsert logic - cast to any to avoid 'never' inference issue
+    // Removed updated_at as it is not in the type definition
     const { error } = await supabase.from("settings").upsert(
       {
         user_id: user.id,
         meta_page_access_token: token,
-        updated_at: new Date().toISOString(),
-      },
+      } as any,
       { onConflict: "user_id" }
     );
 

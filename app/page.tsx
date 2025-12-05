@@ -135,11 +135,14 @@ export default function Home() {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error("User not authenticated");
 
-        const { data: settings } = await supabase
+        // Cast settings to any to avoid 'never' type inference
+        const { data: settingsData } = await supabase
             .from('settings')
             .select('meta_page_access_token')
             .eq('user_id', user.id)
             .maybeSingle();
+        
+        const settings = settingsData as any;
 
         if (!settings?.meta_page_access_token) {
             throw new Error("No Page Access Token found in Settings");
@@ -164,6 +167,7 @@ export default function Home() {
         }
 
         // D. Save to DB
+        // Using 'as any' to bypass 'never' type errors on table operations
         await Promise.all([
             supabase.from('messages').insert({
                 conversation_id: selectedId,
@@ -171,14 +175,14 @@ export default function Home() {
                 sender_type: 'page',
                 created_at: new Date().toISOString(),
                 meta_message_id: fbData.message_id 
-            }),
+            } as any),
             supabase.from('conversations').update({
                 last_interaction_at: new Date().toISOString(),
                 status: 'active',
                 unread_count: 0,
                 last_message_preview: text,
                 last_message_by: 'page'
-            }).eq('id', selectedId)
+            } as any).eq('id', selectedId)
         ]);
 
     } catch (error: any) {
@@ -198,11 +202,13 @@ export default function Home() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data: settings } = await supabase
+      const { data: settingsData } = await supabase
         .from('settings')
         .select('meta_page_access_token')
         .eq('user_id', user.id)
         .maybeSingle();
+
+      const settings = settingsData as any;
 
       if (!settings?.meta_page_access_token) {
         if (confirm('Meta Access Token is missing. Go to settings?')) {
@@ -271,10 +277,12 @@ export default function Home() {
         }
 
         if (convoBatch.length > 0) {
-            const { data: savedConvos, error: convoError } = await supabase
+            const { data: savedConvosData, error: convoError } = await supabase
                 .from('conversations')
-                .upsert(convoBatch, { onConflict: 'psid' })
+                .upsert(convoBatch as any, { onConflict: 'psid' })
                 .select('id, psid');
+
+            const savedConvos = savedConvosData as any[] | null;
 
             if (convoError) {
                 console.error("Batch Convo Error", convoError);
@@ -297,7 +305,7 @@ export default function Home() {
                 }).filter(Boolean);
 
                 if (finalMsgBatch.length > 0) {
-                    await supabase.from('messages').upsert(finalMsgBatch, { onConflict: 'meta_message_id' });
+                    await supabase.from('messages').upsert(finalMsgBatch as any, { onConflict: 'meta_message_id' });
                 }
             }
         }
